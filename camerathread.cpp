@@ -1,0 +1,150 @@
+#include "camerathread.h"
+#include <QDebug>
+#include <cstring>
+#include "logger.h"
+#include <QDir>
+#include <QCoreApplication>
+#include <QDateTime>
+
+camerathread::camerathread(QObject* parent): QThread(parent)
+{
+
+}
+camerathread::~camerathread()
+{
+    stop();
+}
+bool camerathread::openCamera()
+{
+    LOG_INFO("Initialize camera");
+//    try{
+//        int nRet = MV_CC_Initialize();
+//        if (MV_OK != nRet)
+//        {
+//            printf("MV_CC_Initialize fail! nRet [0x%x]\n", nRet);
+//            emit errorMegSig(QString("MV_CC_Initialize fail! nRet [0x%x]\n").arg(nRet));
+//            return -1;
+//        }
+
+//        MV_CC_DEVICE_INFO_LIST devList = {0};
+//        memset(&devList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
+//        MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
+//        qDebug() << devList.nDeviceNum;
+
+//        MV_CC_CreateHandle(&m_hCam, devList.pDeviceInfo[0]);
+//        int ret = MV_CC_OpenDevice(m_hCam);
+
+//        // 像素格式
+//        MV_CC_SetEnumValue(m_hCam, "PixelFormat", PixelType_Gvsp_BGR8_Packed);
+
+//        // 曝光
+//        MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
+//        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 5000.0f); // 5ms
+
+//        // 白平衡
+//        MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
+
+//        // 帧率控制
+//        MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
+//        MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
+
+
+
+//        qDebug() << "Open ret = "<<ret;
+//        if (ret != MV_OK) {
+//            qDebug() << "Open camera failed";
+//            emit errorMegSig("Open camera failed");
+//            return false;
+//        }
+
+//        MV_CC_SetEnumValue(m_hCam, "AcquisitionMode", 2);
+//        MV_CC_SetEnumValue(m_hCam, "TriggerMode", 0);
+
+//        MV_CC_StartGrabbing(m_hCam);
+
+//        m_running = true;
+//    }catch(std::exception& e)
+//    {
+//        emit errorMegSig(e.what());
+//        return false;
+//    }
+    return true;
+}
+void camerathread::stop()
+{
+    LOG_INFO("Turn off camera");
+    m_running = false;
+    wait();
+
+    if (m_hCam) {
+//        MV_CC_StopGrabbing(m_hCam);
+//        MV_CC_CloseDevice(m_hCam);
+//        MV_CC_DestroyHandle(m_hCam);
+        m_hCam = nullptr;
+    }
+
+    delete[] rgbBuffer;
+    rgbBuffer = nullptr;
+}
+
+void camerathread::run()
+{
+    LOG_INFO("Start taking pictures");
+//    try{
+//        MV_FRAME_OUT frame = {0};
+
+//        while (m_running)
+//        {
+//            QThread::sleep(captureFrequency); // 间隔采样时间拍照，单位秒
+//            if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) == MV_OK)
+//            {
+//                int width = frame.stFrameInfo.nWidth;
+//                int height = frame.stFrameInfo.nHeight;
+
+//                int rgbSize = width * height * 3;
+//                if (!rgbBuffer)
+//                    rgbBuffer = new unsigned char[rgbSize];
+
+//                MV_CC_PIXEL_CONVERT_PARAM convertParam;
+//                memset(&convertParam, 0, sizeof(convertParam));
+
+//                convertParam.nWidth = width;
+//                convertParam.nHeight = height;
+//                convertParam.pSrcData = frame.pBufAddr;
+//                convertParam.nSrcDataLen = frame.stFrameInfo.nFrameLen;
+//                convertParam.enSrcPixelType = frame.stFrameInfo.enPixelType;
+
+//                convertParam.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
+//                convertParam.pDstBuffer = rgbBuffer;
+//                convertParam.nDstBufferSize = rgbSize;
+
+//                MV_CC_ConvertPixelType(m_hCam, &convertParam);
+
+//                QImage img(rgbBuffer, width, height, QImage::Format_RGB888);
+
+                  //保存图片到本地saveRawPic文件夹
+//                QString baseDir = QCoreApplication::applicationDirPath();
+
+//                QString saveDirPath = baseDir + "/saveRawPic";
+//                QDir saveDir(saveDirPath);
+//                if (!saveDir.exists())
+//                {
+//                    saveDir.mkpath(".");
+//                }
+//                QString fileName = QString("img_%1.png")
+//                        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss_zzz"));
+//                QString filePath = saveDirPath + "/" + fileName;
+//                img.save(filePath);
+//                emit forOSSPathSig(filePath, 1); // 保存到本地的图片将命名发送到云端上传线程
+
+//                emit frameReadySig(img.copy());   // copy 防止内存复用
+
+//                MV_CC_FreeImageBuffer(m_hCam, &frame);
+//            }
+//        }
+//    }catch(std::exception& e)
+//    {
+//    emit errorMegSig(e.what());
+//    return;
+//    }
+}
