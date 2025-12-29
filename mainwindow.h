@@ -12,6 +12,7 @@
 #include "uploadpictooss.h"
 #include <QTranslator>
 #include <QLabel>
+#include "savelocalpic.h"
 
 
 QT_BEGIN_NAMESPACE
@@ -71,6 +72,8 @@ private:
     QGraphicsPixmapItem* pixmapItem;
     camerathread* camThread;
     uploadpictoOSS* ossThread;
+    saveLocalpic* savelocalpicThread;
+
     QThread* threadPool;
 
     QString logMsg;

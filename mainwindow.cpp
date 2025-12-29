@@ -74,11 +74,17 @@ MainWindow::MainWindow(QWidget *parent)
         ossThread = new uploadpictoOSS(this);
         ossThread->moveToThread(threadPool);
 
+        // 保存本地文件线程
+        savelocalpicThread = new saveLocalpic(this);
+        savelocalpicThread->moveToThread(threadPool);
+
         // 摄像头线程
         camThread = new camerathread(this);
         connect(camThread, &camerathread::frameReadySig,
                 this, &MainWindow::updateFrame);
-        connect(camThread, &camerathread::forOSSPathSig,
+        connect(camThread, &camerathread::frameReadySig,
+                savelocalpicThread, &saveLocalpic::savelocalpicture);
+        connect(savelocalpicThread, &saveLocalpic::forOSSPathSig,
                 this, &MainWindow::uploadOSSPath);
         connect(camThread, &camerathread::errorMegSig,
                 this, &MainWindow::cameraerrorMegSig,Qt::QueuedConnection);
@@ -592,19 +598,8 @@ void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
     LOG_INFO(logMsg);
 
     uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
-
-    // 将上传云端失败的图片名称和类型保存到本地txt文件夹中
-    if (!uploadOssSorF)
-    {
-        QFile file("failupLoadImage.txt");
-        if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
-        {
-            QTextStream out(&file);
-            out << filePath << "," << ImgClass << "\n";
-            file.close();
-        }
-    }
 }
+
 void MainWindow::retryUploadFailedImages()
 {
     LOG_INFO("History failed-upload Image reupload.");
@@ -674,7 +669,7 @@ void MainWindow::on_languageButton_clicked()
         m_currentLanguage = "english";
         ui->languageButton->setText(QT_TR_NOOP("英文 / English"));
 
-        m_translator.load("guangxuan_zh_CN.qm");
+        m_translator.load(":/guangxuan_zh_CN.qm");
         qApp->installTranslator(&m_translator);
         ui->retranslateUi(this);
 
@@ -692,7 +687,7 @@ void MainWindow::on_languageButton_clicked()
         m_currentLanguage = "chinese";
         ui->languageButton->setText(QT_TR_NOOP("简体中文 / Simplified Chinese"));
 
-        m_translator.load("guangxuan_zh_EN.qm");
+        m_translator.load(":/guangxuan_zh_EN.qm");
         qApp->installTranslator(&m_translator);
         ui->retranslateUi(this);
 

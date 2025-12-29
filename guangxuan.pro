@@ -22,6 +22,7 @@ SOURCES += \
     logger.cpp \
     main.cpp \
     mainwindow.cpp \
+    savelocalpic.cpp \
     uploadpictooss.cpp
 
 HEADERS += \
@@ -29,6 +30,7 @@ HEADERS += \
     logger.h \
     mainwindow.h \
     library/mvs/includes/MvCameraControl.h \
+    savelocalpic.h \
     uploadpictooss.h
 
 
@@ -45,23 +47,13 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 
+unix:!macx: LIBS += -L$$PWD/../../../../../../opt/MVS/lib/64/ -lMvCameraControl
 
-#win32: LIBS += -L$$PWD/library/mvs/libs/ -lMvCameraControl
-
-#INCLUDEPATH += $$PWD/library/mvs/includes
-#DEPENDPATH += $$PWD/library/mvs/includes
-
-#unix:!macx: LIBS += -L$$PWD/../../下载/MVS-3.0.1_x86_64_20241128/MVS/lib/64/ -lMvCameraControl
-
-#INCLUDEPATH += $$PWD/../../下载/MVS-3.0.1_x86_64_20241128/MVS/lib/64
-#DEPENDPATH += $$PWD/../../下载/MVS-3.0.1_x86_64_20241128/MVS/lib/64
-
-
-
-unix:!macx: LIBS += -L$$PWD/../../../../opt/MVS/lib/64/ -lMvCameraControl
-
-INCLUDEPATH += $$PWD/../../../../opt/MVS/lib/64
-DEPENDPATH += $$PWD/../../../../opt/MVS/lib/64
+INCLUDEPATH += $$PWD/../../../../../../opt/MVS/lib/64
+DEPENDPATH += $$PWD/../../../../../../opt/MVS/lib/64
 
 DISTFILES += \
     guangxuan_zh_EN.ts
+
+RESOURCES += \
+    resources.qrc

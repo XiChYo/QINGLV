@@ -122,21 +122,6 @@ void camerathread::run()
 
 //                QImage img(rgbBuffer, width, height, QImage::Format_RGB888);
 
-                  //保存图片到本地saveRawPic文件夹
-//                QString baseDir = QCoreApplication::applicationDirPath();
-
-//                QString saveDirPath = baseDir + "/saveRawPic";
-//                QDir saveDir(saveDirPath);
-//                if (!saveDir.exists())
-//                {
-//                    saveDir.mkpath(".");
-//                }
-//                QString fileName = QString("img_%1.png")
-//                        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss_zzz"));
-//                QString filePath = saveDirPath + "/" + fileName;
-//                img.save(filePath);
-//                emit forOSSPathSig(filePath, 1); // 保存到本地的图片将命名发送到云端上传线程
-
 //                emit frameReadySig(img.copy());   // copy 防止内存复用
 
 //                MV_CC_FreeImageBuffer(m_hCam, &frame);

@@ -110,6 +110,14 @@ bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageCl
 //            error.HttpStatus()
 //        );
 //        LOG_ERROR(logMsg);
+////         将上传云端失败的图片名称和类型保存到本地txt文件夹中
+//        QFile file("failupLoadImage.txt");
+//        if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+//        {
+//            QTextStream out(&file);
+//            out << localFilePath << "," << imageClass << "\n";
+//            file.close();
+//        }
 //        return false;
 //    }
 //    else

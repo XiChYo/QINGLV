@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/new/prefix">
+        <file>logo.png</file>
+        <file>shutdown.png</file>
+        <file>guangxuan_zh_CN.qm</file>
+        <file>guangxuan_zh_EN.qm</file>
+    </qresource>
+</RCC>

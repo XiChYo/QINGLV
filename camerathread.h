@@ -3,7 +3,7 @@
 #include <QThread>
 #include <QImage>
 //#include "library/mvs/includes/MvCameraControl.h"
-//#include "/../../opt/MVS/include/MvCameraControl.h"
+//#include "/../../../../opt/MVS/include/MvCameraControl.h"
 
 class camerathread: public QThread
 {
@@ -23,7 +23,7 @@ protected:
 signals:
     void frameReadySig(const QImage& img);
     void errorMegSig(const QString& errMeg);
-    void forOSSPathSig(const QString& FilePath, const int ImgClass);
+//    void forOSSPathSig(const QString& FilePath, const int ImgClass);
 
 private:
     void* m_hCam = nullptr;
