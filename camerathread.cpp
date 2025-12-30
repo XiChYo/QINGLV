@@ -90,46 +90,78 @@ void camerathread::stop()
 void camerathread::run()
 {
     LOG_INFO("Start taking pictures");
-//    try{
-//        MV_FRAME_OUT frame = {0};
-
-//        while (m_running)
+//    try
 //        {
-//            QThread::sleep(captureFrequency); // 间隔采样时间拍照，单位秒
-//            if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) == MV_OK)
+//            m_running = true;
+
+//            MV_FRAME_OUT frame = {0};
+
+//            QElapsedTimer timer;
+//            timer.start();
+
+//            qint64 nextCaptureTime = 0;
+
+//            while (m_running && !isInterruptionRequested())
 //            {
-//                int width = frame.stFrameInfo.nWidth;
+//                qint64 now = timer.elapsed();
+
+//                // 时间没到，不取图
+//                if (now < nextCaptureTime)
+//                {
+//                    // 短暂休眠，避免 CPU 空转
+//                    QThread::msleep(1);
+//                    continue;
+//                }
+
+//                // 计算下一次采样时间点
+//                nextCaptureTime = now + captureIntervalMs;
+
+//                // 取图
+//                if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) != MV_OK)
+//                {
+//                    continue;
+//                }
+
+//                uint32_t frameNum = frame.stFrameInfo.nFrameNum; // 取帧号
+
+//                int width  = frame.stFrameInfo.nWidth;
 //                int height = frame.stFrameInfo.nHeight;
 
 //                int rgbSize = width * height * 3;
+
 //                if (!rgbBuffer)
+//                {
 //                    rgbBuffer = new unsigned char[rgbSize];
+//                }
 
 //                MV_CC_PIXEL_CONVERT_PARAM convertParam;
 //                memset(&convertParam, 0, sizeof(convertParam));
 
-//                convertParam.nWidth = width;
-//                convertParam.nHeight = height;
-//                convertParam.pSrcData = frame.pBufAddr;
-//                convertParam.nSrcDataLen = frame.stFrameInfo.nFrameLen;
-//                convertParam.enSrcPixelType = frame.stFrameInfo.enPixelType;
+//                convertParam.nWidth           = width;
+//                convertParam.nHeight          = height;
+//                convertParam.pSrcData         = frame.pBufAddr;
+//                convertParam.nSrcDataLen      = frame.stFrameInfo.nFrameLen;
+//                convertParam.enSrcPixelType   = frame.stFrameInfo.enPixelType;
+//                convertParam.enDstPixelType   = PixelType_Gvsp_RGB8_Packed;
+//                convertParam.pDstBuffer       = rgbBuffer;
+//                convertParam.nDstBufferSize   = rgbSize;
 
-//                convertParam.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
-//                convertParam.pDstBuffer = rgbBuffer;
-//                convertParam.nDstBufferSize = rgbSize;
-
-//                MV_CC_ConvertPixelType(m_hCam, &convertParam);
+//                if (MV_CC_ConvertPixelType(m_hCam, &convertParam) != MV_OK)
+//                {
+//                    MV_CC_FreeImageBuffer(m_hCam, &frame);
+//                    continue;
+//                }
 
 //                QImage img(rgbBuffer, width, height, QImage::Format_RGB888);
 
-//                emit frameReadySig(img.copy());   // copy 防止内存复用
+//                // 必须 copy，防止内存复用
+//                emit frameReadySig(img.copy());
 
 //                MV_CC_FreeImageBuffer(m_hCam, &frame);
 //            }
 //        }
-//    }catch(std::exception& e)
-//    {
-//    emit errorMegSig(e.what());
-//    return;
-//    }
+//        catch (const std::exception& e)
+//        {
+//            emit errorMegSig(e.what());
+//        }
 }

@@ -2,6 +2,7 @@
 #define CAMERA_THREAD_H
 #include <QThread>
 #include <QImage>
+#include <QElapsedTimer>
 //#include "library/mvs/includes/MvCameraControl.h"
 //#include "/../../../../opt/MVS/include/MvCameraControl.h"
 
@@ -15,7 +16,7 @@ public:
     bool openCamera();
     void stop();
 
-    float captureFrequency = 5; // 采样时间，单位秒
+    float captureIntervalMs  = 1000; // 采样周期，单位毫秒
 
 protected:
     void run() override;
@@ -23,7 +24,6 @@ protected:
 signals:
     void frameReadySig(const QImage& img);
     void errorMegSig(const QString& errMeg);
-//    void forOSSPathSig(const QString& FilePath, const int ImgClass);
 
 private:
     void* m_hCam = nullptr;
