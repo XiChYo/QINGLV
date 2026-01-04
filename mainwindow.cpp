@@ -669,7 +669,7 @@ void MainWindow::on_languageButton_clicked()
         m_currentLanguage = "english";
         ui->languageButton->setText(QT_TR_NOOP("英文 / English"));
 
-        m_translator.load(":/guangxuan_zh_CN.qm");
+        m_translator.load("guangxuan_zh_CN.qm");
         qApp->installTranslator(&m_translator);
         ui->retranslateUi(this);
 
@@ -687,7 +687,7 @@ void MainWindow::on_languageButton_clicked()
         m_currentLanguage = "chinese";
         ui->languageButton->setText(QT_TR_NOOP("简体中文 / Simplified Chinese"));
 
-        m_translator.load(":/guangxuan_zh_EN.qm");
+        m_translator.load("guangxuan_zh_EN.qm");
         qApp->installTranslator(&m_translator);
         ui->retranslateUi(this);
 

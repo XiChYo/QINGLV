@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QElapsedTimer>
 //#include "library/mvs/includes/MvCameraControl.h"
+#include "bin/include/MvCameraControl.h"
 //#include "/../../../../opt/MVS/include/MvCameraControl.h"
 
 class camerathread: public QThread

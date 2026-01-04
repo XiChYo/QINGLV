@@ -11,7 +11,7 @@ saveLocalpic::saveLocalpic(QObject* parent)
 
 void saveLocalpic::savelocalpicture(const QImage& img)
 {
-    //                  保存图片到本地saveRawPic文件夹
+    // 保存图片到本地saveRawPic文件夹
     QString baseDir = QCoreApplication::applicationDirPath();
 
     QString saveDirPath = baseDir + "/saveRawPic";

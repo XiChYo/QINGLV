@@ -1,0 +1,11 @@
+camerathread.o
+logger.o
+main.o
+mainwindow.o
+savelocalpic.o
+uploadpictooss.o
+qrc_resources.o
+moc_camerathread.o
+moc_mainwindow.o
+moc_savelocalpic.o
+moc_uploadpictooss.o

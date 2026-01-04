@@ -1,0 +1,6 @@
+2026-01-04 08:13:37 [INFO] [MainWindow] AI Optical Sorter Software Starting
+2026-01-04 08:13:38 [INFO] [camerathread] Initialize camera
+2026-01-04 08:13:38 [INFO] [MainWindow] Camera thread started
+2026-01-04 08:13:38 [INFO] [camerathread] Start taking pictures
+2026-01-04 08:13:40 [INFO] [camerathread] Turn off camera
+2026-01-04 08:13:40 [INFO] [camerathread] Turn off camera

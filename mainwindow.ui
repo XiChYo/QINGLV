@@ -1404,8 +1404,8 @@ QPushButton:pressed {
        </layout>
       </widget>
       <zorder>homePage</zorder>
-      <zorder>systemManagement</zorder>
       <zorder>materialSelection</zorder>
+      <zorder>systemManagement</zorder>
      </widget>
     </item>
     <item>

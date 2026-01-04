@@ -47,13 +47,21 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 
-unix:!macx: LIBS += -L$$PWD/../../../../../../opt/MVS/lib/64/ -lMvCameraControl
+#unix:!macx: LIBS += -L$$PWD/../../../../../../opt/MVS/lib/64/ -lMvCameraControl
 
-INCLUDEPATH += $$PWD/../../../../../../opt/MVS/lib/64
-DEPENDPATH += $$PWD/../../../../../../opt/MVS/lib/64
+#INCLUDEPATH += $$PWD/../../../../../../opt/MVS/lib/64
+#DEPENDPATH += $$PWD/../../../../../../opt/MVS/lib/64
+
+
 
 DISTFILES += \
-    guangxuan_zh_EN.ts
+    guangxuan_zh_EN.ts \
+    guangxuan_zh_CN.ts
 
 RESOURCES += \
     resources.qrc
+
+unix:!macx: LIBS += -L$$PWD/bin/lib/aarch64/ -lMvCameraControl
+
+INCLUDEPATH += $$PWD/bin/lib/aarch64
+DEPENDPATH += $$PWD/bin/lib/aarch64
