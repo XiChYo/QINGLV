@@ -50,6 +50,8 @@ private slots:
 
     void on_languageButton_clicked();
 
+    void on_checkforNew_clicked();
+
 private:
     Ui::MainWindow *ui;
     QList<QPushButton*> allButtons; // 保存所有在物料选择生成的按钮

@@ -18,51 +18,51 @@ bool camerathread::openCamera()
 {
     LOG_INFO("Initialize camera");
     try{
-        int nRet = MV_CC_Initialize();
-        if (MV_OK != nRet)
-        {
-            printf("MV_CC_Initialize fail! nRet [0x%x]\n", nRet);
-            emit errorMegSig(QString("MV_CC_Initialize fail! nRet [0x%x]\n").arg(nRet));
-            return -1;
-        }
+//        int nRet = MV_CC_Initialize();
+//        if (MV_OK != nRet)
+//        {
+//            printf("MV_CC_Initialize fail! nRet [0x%x]\n", nRet);
+//            emit errorMegSig(QString("MV_CC_Initialize fail! nRet [0x%x]\n").arg(nRet));
+//            return -1;
+//        }
 
-        MV_CC_DEVICE_INFO_LIST devList = {0};
-        memset(&devList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
-        MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
-        qDebug() << devList.nDeviceNum;
+//        MV_CC_DEVICE_INFO_LIST devList = {0};
+//        memset(&devList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
+//        MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
+//        qDebug() << devList.nDeviceNum;
 
-        MV_CC_CreateHandle(&m_hCam, devList.pDeviceInfo[0]);
-        int ret = MV_CC_OpenDevice(m_hCam);
+//        MV_CC_CreateHandle(&m_hCam, devList.pDeviceInfo[0]);
+//        int ret = MV_CC_OpenDevice(m_hCam);
 
-        // 像素格式
-        MV_CC_SetEnumValue(m_hCam, "PixelFormat", PixelType_Gvsp_BGR8_Packed);
+//        // 像素格式
+//        MV_CC_SetEnumValue(m_hCam, "PixelFormat", PixelType_Gvsp_BGR8_Packed);
 
-        // 曝光
-        MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
-        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 5000.0f); // 5ms
+//        // 曝光
+//        MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
+//        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 5000.0f); // 5ms
 
-        // 白平衡
-        MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
+//        // 白平衡
+//        MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
 
-        // 帧率控制
-        MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
-        MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
+//        // 帧率控制
+//        MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
+//        MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
 
 
 
-        qDebug() << "Open ret = "<<ret;
-        if (ret != MV_OK) {
-            qDebug() << "Open camera failed";
-            emit errorMegSig("Open camera failed");
-            return false;
-        }
+//        qDebug() << "Open ret = "<<ret;
+//        if (ret != MV_OK) {
+//            qDebug() << "Open camera failed";
+//            emit errorMegSig("Open camera failed");
+//            return false;
+//        }
 
-        MV_CC_SetEnumValue(m_hCam, "AcquisitionMode", 2);
-        MV_CC_SetEnumValue(m_hCam, "TriggerMode", 0);
+//        MV_CC_SetEnumValue(m_hCam, "AcquisitionMode", 2);
+//        MV_CC_SetEnumValue(m_hCam, "TriggerMode", 0);
 
-        MV_CC_StartGrabbing(m_hCam);
+//        MV_CC_StartGrabbing(m_hCam);
 
-        m_running = true;
+//        m_running = true;
     }catch(std::exception& e)
     {
         emit errorMegSig(e.what());
@@ -77,9 +77,9 @@ void camerathread::stop()
     wait();
 
     if (m_hCam) {
-        MV_CC_StopGrabbing(m_hCam);
-        MV_CC_CloseDevice(m_hCam);
-        MV_CC_DestroyHandle(m_hCam);
+//        MV_CC_StopGrabbing(m_hCam);
+//        MV_CC_CloseDevice(m_hCam);
+//        MV_CC_DestroyHandle(m_hCam);
         m_hCam = nullptr;
     }
 
@@ -92,73 +92,73 @@ void camerathread::run()
     LOG_INFO("Start taking pictures");
     try
         {
-            m_running = true;
+//            m_running = true;
 
-            MV_FRAME_OUT frame = {0};
+//            MV_FRAME_OUT frame = {0};
 
-            QElapsedTimer timer;
-            timer.start();
+//            QElapsedTimer timer;
+//            timer.start();
 
-            qint64 nextCaptureTime = 0;
+//            qint64 nextCaptureTime = 0;
 
-            while (m_running && !isInterruptionRequested())
-            {
-                qint64 now = timer.elapsed();
+//            while (m_running && !isInterruptionRequested())
+//            {
+//                qint64 now = timer.elapsed();
 
-                // 时间没到，不取图
-                if (now < nextCaptureTime)
-                {
-                    // 短暂休眠，避免 CPU 空转
-                    QThread::msleep(1);
-                    continue;
-                }
+//                // 时间没到，不取图
+//                if (now < nextCaptureTime)
+//                {
+//                    // 短暂休眠，避免 CPU 空转
+//                    QThread::msleep(1);
+//                    continue;
+//                }
 
-                // 计算下一次采样时间点
-                nextCaptureTime = now + captureIntervalMs;
+//                // 计算下一次采样时间点
+//                nextCaptureTime = now + captureIntervalMs;
 
-                // 取图
-                if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) != MV_OK)
-                {
-                    continue;
-                }
+//                // 取图
+//                if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) != MV_OK)
+//                {
+//                    continue;
+//                }
 
-                uint32_t frameNum = frame.stFrameInfo.nFrameNum; // 取帧号
+//                uint32_t frameNum = frame.stFrameInfo.nFrameNum; // 取帧号
 
-                int width  = frame.stFrameInfo.nWidth;
-                int height = frame.stFrameInfo.nHeight;
+//                int width  = frame.stFrameInfo.nWidth;
+//                int height = frame.stFrameInfo.nHeight;
 
-                int rgbSize = width * height * 3;
+//                int rgbSize = width * height * 3;
 
-                if (!rgbBuffer)
-                {
-                    rgbBuffer = new unsigned char[rgbSize];
-                }
+//                if (!rgbBuffer)
+//                {
+//                    rgbBuffer = new unsigned char[rgbSize];
+//                }
 
-                MV_CC_PIXEL_CONVERT_PARAM convertParam;
-                memset(&convertParam, 0, sizeof(convertParam));
+//                MV_CC_PIXEL_CONVERT_PARAM convertParam;
+//                memset(&convertParam, 0, sizeof(convertParam));
 
-                convertParam.nWidth           = width;
-                convertParam.nHeight          = height;
-                convertParam.pSrcData         = frame.pBufAddr;
-                convertParam.nSrcDataLen      = frame.stFrameInfo.nFrameLen;
-                convertParam.enSrcPixelType   = frame.stFrameInfo.enPixelType;
-                convertParam.enDstPixelType   = PixelType_Gvsp_RGB8_Packed;
-                convertParam.pDstBuffer       = rgbBuffer;
-                convertParam.nDstBufferSize   = rgbSize;
+//                convertParam.nWidth           = width;
+//                convertParam.nHeight          = height;
+//                convertParam.pSrcData         = frame.pBufAddr;
+//                convertParam.nSrcDataLen      = frame.stFrameInfo.nFrameLen;
+//                convertParam.enSrcPixelType   = frame.stFrameInfo.enPixelType;
+//                convertParam.enDstPixelType   = PixelType_Gvsp_RGB8_Packed;
+//                convertParam.pDstBuffer       = rgbBuffer;
+//                convertParam.nDstBufferSize   = rgbSize;
 
-                if (MV_CC_ConvertPixelType(m_hCam, &convertParam) != MV_OK)
-                {
-                    MV_CC_FreeImageBuffer(m_hCam, &frame);
-                    continue;
-                }
+//                if (MV_CC_ConvertPixelType(m_hCam, &convertParam) != MV_OK)
+//                {
+//                    MV_CC_FreeImageBuffer(m_hCam, &frame);
+//                    continue;
+//                }
 
-                QImage img(rgbBuffer, width, height, QImage::Format_RGB888);
+//                QImage img(rgbBuffer, width, height, QImage::Format_RGB888);
 
-                // 必须 copy，防止内存复用
-                emit frameReadySig(img.copy());
+//                // 必须 copy，防止内存复用
+//                emit frameReadySig(img.copy());
 
-                MV_CC_FreeImageBuffer(m_hCam, &frame);
-            }
+//                MV_CC_FreeImageBuffer(m_hCam, &frame);
+//            }
         }
         catch (const std::exception& e)
         {

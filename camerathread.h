@@ -3,9 +3,7 @@
 #include <QThread>
 #include <QImage>
 #include <QElapsedTimer>
-//#include "library/mvs/includes/MvCameraControl.h"
-#include "bin/include/MvCameraControl.h"
-//#include "/../../../../opt/MVS/include/MvCameraControl.h"
+//#include "bin/include/MvCameraControl.h"
 
 class camerathread: public QThread
 {
@@ -17,7 +15,7 @@ public:
     bool openCamera();
     void stop();
 
-    float captureIntervalMs  = 1000; // 采样周期，单位毫秒
+    float captureIntervalMs  = 1000; // 采样周期，单位毫秒，皮带速度按照1m/s计算
 
 protected:
     void run() override;

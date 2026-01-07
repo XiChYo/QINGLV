@@ -54,85 +54,103 @@
         <translation>标签</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="997"/>
+        <location filename="mainwindow.ui" line="1077"/>
         <source>执行</source>
         <translation>执行</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1071"/>
+        <location filename="mainwindow.ui" line="1036"/>
         <source>重置</source>
         <translation>重置</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1253"/>
         <source>语言</source>
-        <translation>语言</translation>
+        <translation type="vanished">语言</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1338"/>
+        <location filename="mainwindow.ui" line="1478"/>
         <source>设备ID</source>
         <translation>设备ID</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1356"/>
+        <location filename="mainwindow.ui" line="1236"/>
         <source>12345678</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1190"/>
+        <location filename="mainwindow.ui" line="1164"/>
+        <source>模型版本</source>
+        <translation>模型版本</translation>
+    </message>
+    <message>
+        <location filename="mainwindow.ui" line="1191"/>
+        <location filename="mainwindow.ui" line="1508"/>
+        <source>检查更新</source>
+        <translation>检查更新</translation>
+    </message>
+    <message>
+        <location filename="mainwindow.ui" line="1306"/>
         <source>设备KEY</source>
         <translation>设备KEY</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1208"/>
+        <location filename="mainwindow.ui" line="1324"/>
         <source>VBGBULH21K4JBKU2V54</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1383"/>
+        <location filename="mainwindow.ui" line="1218"/>
         <source>固件版本</source>
         <translation>固件版本</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1271"/>
+        <location filename="mainwindow.ui" line="1369"/>
+        <source>语言 / Language</source>
+        <translation>语言 / Language</translation>
+    </message>
+    <message>
+        <location filename="mainwindow.ui" line="1393"/>
+        <location filename="mainwindow.ui" line="1451"/>
         <source>1.0.0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1298"/>
+        <location filename="mainwindow.ui" line="1433"/>
         <source>IP信息</source>
         <translation>IP信息</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1226"/>
+        <location filename="mainwindow.ui" line="1342"/>
         <source>127.0.0.1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1413"/>
+        <location filename="mainwindow.cpp" line="670"/>
+        <location filename="mainwindow.cpp" line="751"/>
+        <source>英文 / English</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="mainwindow.cpp" line="688"/>
+        <location filename="mainwindow.cpp" line="746"/>
         <source>简体中文 / Simplified Chinese</source>
         <oldsource>简体中文 / chinese</oldsource>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1490"/>
+        <location filename="mainwindow.ui" line="1585"/>
         <source>首页</source>
         <translation>首页</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1523"/>
+        <location filename="mainwindow.ui" line="1618"/>
         <source>物料选择</source>
         <translation>物料选择</translation>
     </message>
     <message>
-        <location filename="mainwindow.ui" line="1556"/>
+        <location filename="mainwindow.ui" line="1651"/>
         <source>系统管理</source>
         <translation>系统管理</translation>
-    </message>
-    <message>
-        <location filename="mainwindow.cpp" line="26"/>
-        <source>AI Optical Sorter Software Starting</source>
-        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

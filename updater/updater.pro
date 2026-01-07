@@ -1,10 +1,8 @@
-QT       += core gui network
+QT       += core gui
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-CONFIG += c++14
-CONFIG += utf8_source
-
+CONFIG += c++11
 
 # The following define makes your compiler emit warnings if you use
 # any Qt feature that has been marked deprecated (the exact warnings
@@ -18,44 +16,18 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    camerathread.cpp \
-    logger.cpp \
     main.cpp \
     mainwindow.cpp \
-    savelocalpic.cpp \
-    updatemanager.cpp \
-    uploadpictooss.cpp
+    updater.cpp
 
 HEADERS += \
-    camerathread.h \
-    logger.h \
     mainwindow.h \
-    library/mvs/includes/MvCameraControl.h \
-    savelocalpic.h \
-    updatemanager.h \
-    uploadpictooss.h
-
+    updater.h
 
 FORMS += \
     mainwindow.ui
-
-TRANSLATIONS += \
-    guangxuan_zh_CN.ts \
-    guangxuan_zh_EN.ts
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
-
-DISTFILES += \
-    guangxuan_zh_EN.ts \
-    guangxuan_zh_CN.ts
-
-RESOURCES += \
-    resources.qrc
-
-#unix:!macx: LIBS += -L$$PWD/bin/lib/aarch64/ -lMvCameraControl
-
-#INCLUDEPATH += $$PWD/bin/lib/aarch64
-#DEPENDPATH += $$PWD/bin/lib/aarch64
