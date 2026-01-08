@@ -29,10 +29,26 @@ private:
     bool copyRecursively(const QString& src, const QString& dst);
 
 private:
-    QString m_zipPath;
-    QString m_targetDir;
+    QString m_FzipPath;
+    QString m_AzipPath;
+
+    QString m_targetFirmDir;
+    QString m_targetAlgorithmDir;
+
     qint64  m_mainPid;
-    QString m_tempDir;
+
+    QString m_tempFirmDir;
+    QString m_tempAlgorithmDir;
+
+    qint64 m_updateFaA;
+
+    enum UpdateFlag
+    {
+        UpdateNone      = 0x0,  // 00
+        UpdateFirmware  = 0x1,  // 01
+        UpdateAlgorithm = 0x2   // 10
+    };
+
 };
 
 

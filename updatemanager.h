@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 
+
 class QNetworkAccessManager;
 class QNetworkReply;
 
@@ -37,7 +38,10 @@ private:
     QString m_remoteVersion;
     QString m_downloadUrl;
 
-    QString m_localZipPath;
+    QString m_localFirmZipPath;
+    QString m_localAlgorithmZipPath;
+
+    int updateFaA = 1; // =0：软件和算法都不需要更新；=1：仅软件需要更新；=2：仅算法要更新；=3：软件和算法都要更新
 };
 
 

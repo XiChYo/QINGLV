@@ -94,6 +94,7 @@ MainWindow::MainWindow(QWidget *parent)
             camThread->start();  // 由于需要等间隔采样照片，等后面能得到皮带速度了，这个需要放在皮带速度代码后面 LN
         }
 
+
         // 线程池中的线程启动
         threadPool->start();
     }catch(std::exception& e)

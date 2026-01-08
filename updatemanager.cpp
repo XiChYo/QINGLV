@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QProcess>
 #include <QDir>
+#include "logger.h"
 
 static const QString CURRENT_VERSION = "1.0.0";
 
@@ -78,19 +79,22 @@ void UpdateManager::downloadUpdatePackage()
     QString appDir = QCoreApplication::applicationDirPath();
 
     // ★ 核心：本地新版本 zip 路径
-    m_localZipPath = appDir + "/update.zip";
 
-    if (!QFile::exists(m_localZipPath))
+    // TODO 这里要增加校验，校验压缩包内的文件是否有那几个必要的文件，如果没有，则不更新
+    m_localFirmZipPath = appDir + "/update.zip";
+    m_localAlgorithmZipPath = appDir + "/algorithmupdate.zip";
+
+    if (!QFile::exists(m_localFirmZipPath))
     {
-        qCritical() << "更新包不存在:" << m_localZipPath;
-        emit updateError("本地更新包 guangxuan.zip 不存在");
+        qCritical() << "软件更新包不存在:" << m_localFirmZipPath;
+        emit updateError("本地软件更新包 guangxuan.zip 不存在");
         return;
     }
 
 
-    qDebug() << "找到本地更新包:" << m_localZipPath;
+    qDebug() << "找到软件本地更新包:" << m_localFirmZipPath;
 //    QDir dir(QCoreApplication::applicationDirPath());
-//    m_localZipPath = dir.filePath("update.zip");
+//    m_localFirmZipPath = dir.filePath("update.zip");
 
 //    QNetworkRequest req(QUrl(m_downloadUrl));
 
@@ -119,7 +123,7 @@ void UpdateManager::onPackageDownloadFinished()
 //    QByteArray zipData = reply->readAll();
 //    reply->deleteLater();
 
-//    QFile file(m_localZipPath);
+//    QFile file(m_localFirmZipPath);
 //    if (!file.open(QIODevice::WriteOnly))
 //    {
 //        emit updateError("Cannot write update.zip");
@@ -147,9 +151,11 @@ void UpdateManager::startUpdaterAndExit()
     }
 
     QStringList args;
-    args << "--zip" << m_localZipPath;
+    args << "--Fzip" << m_localFirmZipPath;
+    args << "--Azip" << m_localAlgorithmZipPath;
     args << "--target" << appDir;
     args << "--pid" << QString::number(QCoreApplication::applicationPid());
+    args << "--FaA" << QString::number(updateFaA);
 
     bool ok = QProcess::startDetached(updaterPath, args);
     if (!ok)
