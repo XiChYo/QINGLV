@@ -14,6 +14,7 @@
 #include <QHttpMultiPart>
 #include <QHttpPart>
 #include <QFile>
+#include <QTimer>
 
 uploadpictoOSS::uploadpictoOSS(QObject* parent)
 {
@@ -49,15 +50,18 @@ bool uploadpictoOSS::initializeOss()
     QNetworkReply *reply = manager.post(request, jsonData);
 
     // 阻塞等待（控制台程序常用，UI 程序不要这么干）
-    QEventLoop loop;
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
+//    QEventLoop loop;
+//    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+
+//    loop.exec();
 
     // 处理结果
     if (reply->error() == QNetworkReply::NoError)
     {
         int httpCode = reply->attribute(
             QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+        qDebug() << "httpCode: "<<httpCode;
 
         QByteArray response = reply->readAll();
 
@@ -198,9 +202,10 @@ bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageCl
     body.append("0.85\r\n");
 
     // file
-    QFile file(ossSaveRoad);
+    QFile file(localFilePath);
     if (!file.open(QIODevice::ReadOnly)) {
-        logMsg = "Failed to open file: " + ossSaveRoad;
+        qDebug() << "Failed to open file: ";
+        logMsg = "Failed to open file: " + localFilePath;
         LOG_ERROR(logMsg);
         return -1;
     }

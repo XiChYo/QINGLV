@@ -55,7 +55,7 @@ DISTFILES += \
 RESOURCES += \
     resources.qrc
 
-#unix:!macx: LIBS += -L$$PWD/bin/lib/aarch64/ -lMvCameraControl
+unix:!macx: LIBS += -L$$PWD/bin/lib/aarch64/ -lMvCameraControl
 
-#INCLUDEPATH += $$PWD/bin/lib/aarch64
-#DEPENDPATH += $$PWD/bin/lib/aarch64
+INCLUDEPATH += $$PWD/bin/lib/aarch64
+DEPENDPATH += $$PWD/bin/lib/aarch64

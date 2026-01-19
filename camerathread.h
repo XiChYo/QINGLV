@@ -3,7 +3,7 @@
 #include <QThread>
 #include <QImage>
 #include <QElapsedTimer>
-//#include "bin/include/MvCameraControl.h"
+#include "bin/include/MvCameraControl.h"
 
 class camerathread: public QThread
 {
@@ -21,7 +21,7 @@ protected:
     void run() override;
 
 signals:
-    void frameReadySig(const QImage& img);
+    void frameReadySig(const QImage& img, const QString& fileName);
     void errorMegSig(const QString& errMeg);
 
 private:

@@ -599,7 +599,7 @@ void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
     logMsg = "Upload image to OSS: " + filePath + "ImgClass" + ImgClass;
     LOG_INFO(logMsg);
 
-    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
+//    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
 }
 
 void MainWindow::retryUploadFailedImages()
@@ -636,13 +636,13 @@ void MainWindow::retryUploadFailedImages()
             continue;
         }
 
-        bool success = ossThread->uploadImage(filePath, ImgClass);
+//        bool success = ossThread->uploadImage(filePath, ImgClass);
 
-        if (!success)
-        {
-            // 本次仍然失败，保留
-            failedLines << line;
-        }
+//        if (!success)
+//        {
+//            // 本次仍然失败，保留
+//            failedLines << line;
+//        }
     }
 
     file.close();

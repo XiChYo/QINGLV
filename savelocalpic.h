@@ -13,7 +13,7 @@ class saveLocalpic: public QThread
 public:
     saveLocalpic(QObject* parent);
 
-    void savelocalpicture(const QImage& img);
+    void savelocalpicture(const QImage& img, const QString& fileName);
 
 signals:
     void forOSSPathSig(const QString& FilePath, const int ImgClass);

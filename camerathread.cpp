@@ -39,7 +39,7 @@ bool camerathread::openCamera()
 
         // 曝光
         MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
-        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 5000.0f); // 5ms
+        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 1000.0f); // 1ms
 
         // 白平衡
         MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
@@ -96,25 +96,11 @@ void camerathread::run()
 
             MV_FRAME_OUT frame = {0};
 
-            QElapsedTimer timer;
-            timer.start();
-
-            qint64 nextCaptureTime = 0;
-
             while (m_running && !isInterruptionRequested())
             {
-                qint64 now = timer.elapsed();
 
                 // 时间没到，不取图
-                if (now < nextCaptureTime)
-                {
-                    // 短暂休眠，避免 CPU 空转
-                    QThread::msleep(1);
-                    continue;
-                }
-
-                // 计算下一次采样时间点
-                nextCaptureTime = now + captureIntervalMs;
+                QThread::msleep(captureIntervalMs);
 
                 // 取图
                 if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) != MV_OK)
@@ -153,9 +139,11 @@ void camerathread::run()
                 }
 
                 QImage img(rgbBuffer, width, height, QImage::Format_RGB888);
-
+                QString fileName = QString("img_%1.jpg")
+                    .arg(QDateTime::currentDateTime()
+                         .toString("yyyyMMdd_hhmmss_zzz"));
                 // 必须 copy，防止内存复用
-                emit frameReadySig(img.copy());
+                emit frameReadySig(img.copy(), fileName);
 
                 MV_CC_FreeImageBuffer(m_hCam, &frame);
             }
