@@ -12,16 +12,22 @@ saveLocalpic::saveLocalpic(QObject* parent)
 
 void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName)
 {
-    // 保存图片到本地saveRawPic文件夹
-    QString baseDir = QCoreApplication::applicationDirPath();
-
-    QString saveDirPath = baseDir + "/saveRawPic";
-    QDir saveDir(saveDirPath);
-    if (!saveDir.exists())
+    if (testint == 1)
     {
-        saveDir.mkpath(".");
+        times += 1;
+        qDebug() << "savePic times:" << QString::number(times);
+        // 保存图片到本地saveRawPic文件夹
+        QString baseDir = QCoreApplication::applicationDirPath();
+
+        QString saveDirPath = baseDir + "/saveRawPic";
+        QDir saveDir(saveDirPath);
+        if (!saveDir.exists())
+        {
+            saveDir.mkpath(".");
+        }
+        QString filePath = saveDirPath + "/" + fileName;
+        bool ok = img.save(filePath, "JPG", 60);
+        emit forOSSPathSig(filePath, 1); // 保存到本地的图片将命名发送到云端上传线程
+        testint = 0;
     }
-    QString filePath = saveDirPath + "/" + fileName;
-    bool ok = img.save(filePath, "JPG", 60);
-    emit forOSSPathSig(filePath, 1); // 保存到本地的图片将命名发送到云端上传线程
 }

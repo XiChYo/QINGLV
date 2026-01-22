@@ -16,9 +16,12 @@
 #include <QFile>
 #include <QTimer>
 
+#include <curl/curl.h>
+#include <QFileInfo>
+
 uploadpictoOSS::uploadpictoOSS(QObject* parent)
 {
-//    initializeOss();
+    initializeOss();
 }
 
 uploadpictoOSS::~uploadpictoOSS()
@@ -50,10 +53,10 @@ bool uploadpictoOSS::initializeOss()
     QNetworkReply *reply = manager.post(request, jsonData);
 
     // 阻塞等待（控制台程序常用，UI 程序不要这么干）
-//    QEventLoop loop;
-//    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
 
-//    loop.exec();
+    loop.exec();
 
     // 处理结果
     if (reply->error() == QNetworkReply::NoError)
@@ -61,14 +64,12 @@ bool uploadpictoOSS::initializeOss()
         int httpCode = reply->attribute(
             QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
-        qDebug() << "httpCode: "<<httpCode;
 
         QByteArray response = reply->readAll();
 
         if (httpCode == 201)
         {
             LOG_INFO("Successfully register!");
-
             // 5️⃣ 解析 JSON
             QJsonParseError err;
             QJsonDocument docJson = QJsonDocument::fromJson(response, &err);
@@ -109,7 +110,7 @@ bool uploadpictoOSS::initializeOss()
     reply->deleteLater();
 
     // 初始化云端oss成功
-    return true;
+    return send_heartbeat();
     }catch(std::exception& e)
     {
         logMsg = "Initialize OSS failed: " + QString::fromStdString(e.what());
@@ -120,11 +121,6 @@ bool uploadpictoOSS::initializeOss()
 
 int uploadpictoOSS::send_heartbeat()
 {
-    // 设备信息
-    device_id = "device-test";
-    device_ip = "192.168.1.100";
-    device_key = "d293b269-aa2b-4aad-91af-7d8ccca0e9f3";
-
     // 构建 JSON
    QJsonObject json;
    json["device_id"] = device_id;
@@ -152,6 +148,7 @@ int uploadpictoOSS::send_heartbeat()
 
    if (reply->error() == QNetworkReply::NoError && httpCode == 200) {
        logMsg = "Successfully send heartbeat. response:" + response;
+
        LOG_INFO(logMsg);
    } else {
        logMsg = "Failed send heartbeat. HTTP:" + QString::number(httpCode) + " errorMeg:" + reply->errorString() + " response:" + response;
@@ -164,128 +161,76 @@ int uploadpictoOSS::send_heartbeat()
 
 bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageClass)
 {
-    // OSS中的保存
+    qDebug()<<localFilePath;
     QFileInfo fileInfo(localFilePath);
-    QString fileName = fileInfo.fileName();   // 例如：image_001.jpg
+    QString fileName = fileInfo.fileName();
+
     if (imageClass == 1)
-    {
         ossSaveRoad = "saveRawImage/" + fileName;
-    }else if(imageClass == 2)
-    {
+    else if (imageClass == 2)
         ossSaveRoad = "saveMarkImage/" + fileName;
-    }else if(imageClass == 3)
-    {
+    else if (imageClass == 3)
         ossSaveRoad = "saveLowConfidenceImage/" + fileName;
+
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        LOG_ERROR("curl_easy_init failed");
+        return false;
     }
 
-    QNetworkAccessManager manager;
+    curl_mime *mime = curl_mime_init(curl);
+    curl_mimepart *part = nullptr;
 
-    QUrl url(savepicAPI);
-    QNetworkRequest request(url);
+    /* device_id */
+    part = curl_mime_addpart(mime);
+    curl_mime_name(part, "device_id");
+    curl_mime_data(part, device_id.toUtf8().constData(), CURL_ZERO_TERMINATED);
 
-    QByteArray boundary = "----QtFormBoundary7MA4YWxkTrZu0gW";
-    QByteArray body;
+    /* device_key */
+    part = curl_mime_addpart(mime);
+    curl_mime_name(part, "device_key");
+    curl_mime_data(part, device_key.toUtf8().constData(), CURL_ZERO_TERMINATED);
 
-    // device_id
-    body.append("--" + boundary + "\r\n");
-    body.append("Content-Disposition: form-data; name=\"device_id\"\r\n\r\n");
-    body.append(device_id.toUtf8() + "\r\n");
+    /* confidence */
+    part = curl_mime_addpart(mime);
+    curl_mime_name(part, "confidence");
+    curl_mime_data(part, "0.85", CURL_ZERO_TERMINATED);
 
-    // device_key
-    body.append("--" + boundary + "\r\n");
-    body.append("Content-Disposition: form-data; name=\"device_key\"\r\n\r\n");
-    body.append(device_key.toUtf8() + "\r\n");
+    /* file */
+    part = curl_mime_addpart(mime);
+    curl_mime_name(part, "file");
+    curl_mime_filedata(part, localFilePath.toUtf8().constData());
+    curl_mime_type(part, "image/jpg");
 
-    // confidence
-    body.append("--" + boundary + "\r\n");
-    body.append("Content-Disposition: form-data; name=\"confidence\"\r\n\r\n");
-    body.append("0.85\r\n");
+    /* curl options */
+    curl_easy_setopt(curl, CURLOPT_URL, savepicAPI.toUtf8().constData());
+    curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 
-    // file
-    QFile file(localFilePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "Failed to open file: ";
-        logMsg = "Failed to open file: " + localFilePath;
-        LOG_ERROR(logMsg);
-        return -1;
-    }
+    /* HTTPS 场景（调试用，正式环境应开启校验） */
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 
-    body.append("--" + boundary + "\r\n");
-    body.append(
-        "Content-Disposition: form-data; name=\"file\"; filename=\"test_image.jpg\"\r\n");
-    body.append("Content-Type: image/jpeg\r\n\r\n");
-    body.append(file.readAll());
-    body.append("\r\n");
+    CURLcode res = curl_easy_perform(curl);
 
-    // end
-    body.append("--" + boundary + "--\r\n");
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
-    request.setHeader(
-        QNetworkRequest::ContentTypeHeader,
-        "multipart/form-data; boundary=" + boundary);
-    request.setHeader(
-        QNetworkRequest::ContentLengthHeader,
-        QByteArray::number(body.size()));
-
-    QNetworkReply *reply = manager.post(request, body);
-
-    // 阻塞等待（仅限非 UI 线程）
-    QEventLoop loop;
-    QObject::connect(reply, &QNetworkReply::finished,
-                     &loop, &QEventLoop::quit);
-    loop.exec();
-
-    // 读取结果
-    int httpCode = reply->attribute(
-        QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    QByteArray response = reply->readAll();
-
-    if (reply->error() == QNetworkReply::NoError) {
-        logMsg = "Successfully upload, HTTP:" + QString::number(httpCode) + " response:" + response;
+    if (res == CURLE_OK) {
+        logMsg = QString("Successfully upload, HTTP:%1").arg(httpCode);
         LOG_INFO(logMsg);
+        qDebug() << "Successfully upload";
     } else {
-        logMsg = "Failed upload, HTTP:" + QString::number(httpCode) + " errorMeg:" + reply->errorString() + " response:" + response;
-        LOG_INFO(logMsg);
+        logMsg = QString("Failed upload, HTTP:%1 error:%2")
+                     .arg(httpCode)
+                     .arg(curl_easy_strerror(res));
+        LOG_ERROR(logMsg);
+        qDebug() << "Failed upload";
     }
 
-    reply->deleteLater();
-    return 0;
+    curl_mime_free(mime);
+    curl_easy_cleanup(curl);
 
-//    auto outcome = client.PutObject(
-//        bucketName,
-//        ossSaveRoad,
-//        localFilePath.toStdString()
-//    );
-
-////  如果上传失败，打印失败原因
-//    if (!outcome.isSuccess())
-//    {
-//        const auto &error = outcome.error();
-
-//        QString logMsg = QString(
-//            "OSS uploadImage failed | Code: %1 | Message: %2 | RequestId: %3 | HttpStatus: %4"
-//        ).arg(
-//            QString::fromStdString(error.Code()),
-//            QString::fromStdString(error.Message()),
-//            QString::fromStdString(error.RequestId())
-//        ).arg(
-//            error.HttpStatus()
-//        );
-//        LOG_ERROR(logMsg);
-////         将上传云端失败的图片名称和类型保存到本地txt文件夹中
-//        QFile file("failupLoadImage.txt");
-//        if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
-//        {
-//            QTextStream out(&file);
-//            out << localFilePath << "," << imageClass << "\n";
-//            file.close();
-//        }
-//        return false;
-//    }
-//    else
-//    {
-//        logMsg = "upLoadImage success: " + ossSaveRoad;
-//        LOG_INFO(logMsg);
-//        return true;
-//    }
+    return (res == CURLE_OK);
 }

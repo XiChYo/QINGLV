@@ -570,22 +570,23 @@ void MainWindow::on_run_clicked()
 
 void MainWindow::on_powerbutton_clicked()
 {
-    // 弹出询问框
-    QMessageBox::StandardButton reply;
-    reply = QMessageBox::question(this, "关机确认", "是否要关机？",
-                                  QMessageBox::Yes | QMessageBox::No);
-    try{
-    if (reply == QMessageBox::Yes) {
-        LOG_INFO("Shutdown command executed");
-        // 用户选择 Yes，执行关机命令
-        // 测试的时候先注释掉，以免误点关机。。。
-//        QProcess::execute("shutdown /s /t 0"); // Windows 立即关机
-//        QProcess::startDetached("shutdown", QStringList() << "-h" << "now"); // Linux 立即关机
-    }}catch(std::exception& e)
-    {
-        logMsg = "powerbtn: " + QString::fromStdString(e.what());
-        LOG_ERROR(logMsg);
-    }
+    savelocalpicThread -> testint = 1;
+//    // 弹出询问框
+//    QMessageBox::StandardButton reply;
+//    reply = QMessageBox::question(this, "关机确认", "是否要关机？",
+//                                  QMessageBox::Yes | QMessageBox::No);
+//    try{
+//    if (reply == QMessageBox::Yes) {
+//        LOG_INFO("Shutdown command executed");
+//        // 用户选择 Yes，执行关机命令
+//        // 测试的时候先注释掉，以免误点关机。。。
+////        QProcess::execute("shutdown /s /t 0"); // Windows 立即关机
+////        QProcess::startDetached("shutdown", QStringList() << "-h" << "now"); // Linux 立即关机
+//    }}catch(std::exception& e)
+//    {
+//        logMsg = "powerbtn: " + QString::fromStdString(e.what());
+//        LOG_ERROR(logMsg);
+//    }
 }
 
 void MainWindow::updateFrame(const QImage &img)
@@ -599,7 +600,7 @@ void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
     logMsg = "Upload image to OSS: " + filePath + "ImgClass" + ImgClass;
     LOG_INFO(logMsg);
 
-//    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
+    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
 }
 
 void MainWindow::retryUploadFailedImages()

@@ -15,6 +15,9 @@ public:
 
     void savelocalpicture(const QImage& img, const QString& fileName);
 
+    int testint = 0;
+    int times = 0;
+
 signals:
     void forOSSPathSig(const QString& FilePath, const int ImgClass);
 };

@@ -4,6 +4,8 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++14
 CONFIG += utf8_source
+CONFIG += link_pkgconfig
+PKGCONFIG += libcurl
 
 
 # The following define makes your compiler emit warnings if you use
@@ -59,3 +61,5 @@ unix:!macx: LIBS += -L$$PWD/bin/lib/aarch64/ -lMvCameraControl
 
 INCLUDEPATH += $$PWD/bin/lib/aarch64
 DEPENDPATH += $$PWD/bin/lib/aarch64
+
+

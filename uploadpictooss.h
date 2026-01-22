@@ -28,14 +28,14 @@ private:
     QString logMsg;
 
     // 设备id、ip、注册密钥、设备密钥、三大api_url
-    QString device_id = "device-test";
+    QString device_id = "qinglv-test";
     QString device_ip = "192.168.1.100";
     QString register_key = "register-key-2026";
     QString device_key;
     QString bucketName;
-    QString registerAPI = "http://120.79.183.234:18000/api/devices/register";
-    QString heartbeatAPI = "http://120.79.183.234:18000/api/devices/heartbeat";
-    QString savepicAPI = "http://120.79.183.234:18000/api/data/images";
+    QString registerAPI = "https://www.wkuai.xyz:8443/api/devices/register";
+    QString heartbeatAPI = "https://www.wkuai.xyz:8443/api/devices/heartbeat";
+    QString savepicAPI = "https://www.wkuai.xyz:8443/api/data/images";
 
 
     // OSS中的保存路径
