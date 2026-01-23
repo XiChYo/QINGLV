@@ -31,137 +31,97 @@ uploadpictoOSS::~uploadpictoOSS()
 
 bool uploadpictoOSS::initializeOss()
 {
-    try{
-    // 构建 JSON
-    LOG_INFO("Build Initialize OssJson");
+
+    // ===== 2. 构建 JSON =====
     QJsonObject json;
     json["device_id"] = device_id;
     json["device_ip"] = device_ip;
     json["register_key"] = register_key;
 
     QJsonDocument doc(json);
-    QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
+    QByteArray postData = doc.toJson(QJsonDocument::Compact);
 
-    // 创建网络管理器
+    // ===== 3. 构建请求 =====
     QNetworkAccessManager manager;
-
-    // 创建请求
-    QNetworkRequest request{ QUrl(registerAPI) };
+    QNetworkRequest request{QUrl(registerAPI)};
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
-    // 发送 POST 请求
-    QNetworkReply *reply = manager.post(request, jsonData);
+    // 如果你测试 HTTPS 很慢，可以临时打开（正式环境别用）
+    /*
+    QSslConfiguration sslConfig = request.sslConfiguration();
+    sslConfig.setPeerVerifyMode(QSslSocket::VerifyNone);
+    request.setSslConfiguration(sslConfig);
+    */
 
-    // 阻塞等待（控制台程序常用，UI 程序不要这么干）
+    // ===== 4. 发送请求 =====
+    QNetworkReply* reply = manager.post(request, postData);
+
+    // ===== 5. 同步等待 =====
     QEventLoop loop;
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-
+    QObject::connect(reply, &QNetworkReply::finished,
+                     &loop, &QEventLoop::quit);
     loop.exec();
 
-    // 处理结果
-    if (reply->error() == QNetworkReply::NoError)
-    {
-        int httpCode = reply->attribute(
-            QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    // ===== 6. 解析结果 =====
+    int httpCode = reply->attribute(
+        QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    QByteArray responseData = reply->readAll();
 
+    bool success = false;
 
-        QByteArray response = reply->readAll();
-
-        if (httpCode == 201)
-        {
-            LOG_INFO("Successfully register!");
-            // 5️⃣ 解析 JSON
-            QJsonParseError err;
-            QJsonDocument docJson = QJsonDocument::fromJson(response, &err);
-
-            if (err.error != QJsonParseError::NoError || !docJson.isObject()) {
-                logMsg = "Illegally JSON" + err.errorString();
-                LOG_ERROR(logMsg);
-                reply->deleteLater();
-                return -1;
-            }
-
-            QJsonObject obj = docJson.object();
-
-            if (!obj.contains("device_key")) {
-                logMsg = "Successfully register but no device_key.";
-                LOG_ERROR(logMsg);
-                reply->deleteLater();
-                return -1;
-            }
-
-            QString deviceKey = obj.value("device_key").toString();
-            logMsg = "deviceKey:" + deviceKey;
-            LOG_INFO(logMsg);
-            device_key = deviceKey;
-        }
-        else
-        {
-            logMsg = "Failed registration.httpCode: " + httpCode;
-            LOG_ERROR(logMsg);
-        }
-    }
-    else
-    {
-        logMsg = "Network request failed: " + reply->errorString();
-        LOG_ERROR(logMsg);
+    if (reply->error() == QNetworkReply::NoError && httpCode == 201) {
+        qDebug() << "[OSS] 初始化成功";
+        qDebug() << "[OSS] Response:" << responseData;
+        success = true;
+    } else {
+        qDebug() << "[OSS] 初始化失败";
+        qDebug() << "[OSS] HTTP Code:" << httpCode;
+        qDebug() << "[OSS] Error:" << reply->errorString();
+        qDebug() << "[OSS] Response:" << responseData;
     }
 
     reply->deleteLater();
-
-    // 初始化云端oss成功
-    return send_heartbeat();
-    }catch(std::exception& e)
-    {
-        logMsg = "Initialize OSS failed: " + QString::fromStdString(e.what());
-        LOG_ERROR(logMsg);
-        return false;
-    }
+    return success;
 }
 
 int uploadpictoOSS::send_heartbeat()
 {
-    // 构建 JSON
-   QJsonObject json;
-   json["device_id"] = device_id;
-   json["device_key"] = device_key;
+    CURL* curl = curl_easy_init();
+    if (!curl) return 1;
+    QString status = "online";
+    QString qjson = QString(
+        "{\"device_id\":\"%1\",\"device_key\":\"%2\",\"status\":\"%3\"}"
+    ).arg(device_id, device_key, status);
 
-   QJsonDocument doc(json);
-   QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
+    std::string json = qjson.toUtf8().constData();
 
-   QNetworkAccessManager manager;
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
 
-   QNetworkRequest request{ QUrl(heartbeatAPI) };
-   request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    curl_easy_setopt(curl, CURLOPT_URL, heartbeatAPI);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, json.size());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-   QNetworkReply *reply = manager.post(request, jsonData);
+    // ⭐ 核心：不接收响应体
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, NULL);
 
-   // 阻塞等待
-   QEventLoop loop;
-   QObject::connect(reply, &QNetworkReply::finished,
-                    &loop, &QEventLoop::quit);
-   loop.exec();
+    CURLcode res = curl_easy_perform(curl);
 
-   // 处理响应
-   int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-   QByteArray response = reply->readAll();
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
-   if (reply->error() == QNetworkReply::NoError && httpCode == 200) {
-       logMsg = "Successfully send heartbeat. response:" + response;
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
 
-       LOG_INFO(logMsg);
-   } else {
-       logMsg = "Failed send heartbeat. HTTP:" + QString::number(httpCode) + " errorMeg:" + reply->errorString() + " response:" + response;
-       LOG_ERROR(logMsg);
-   }
-
-   reply->deleteLater();
-   return httpCode == 200 ? 0 : 1;
+    if (res != CURLE_OK) return 1;
+    return http_code == 200 ? 0 : 1;
 }
 
 bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageClass)
 {
-    qDebug()<<localFilePath;
     QFileInfo fileInfo(localFilePath);
     QString fileName = fileInfo.fileName();
 
@@ -200,6 +160,7 @@ bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageCl
     part = curl_mime_addpart(mime);
     curl_mime_name(part, "file");
     curl_mime_filedata(part, localFilePath.toUtf8().constData());
+    curl_mime_filename(part, fileName.toUtf8().constData());
     curl_mime_type(part, "image/jpg");
 
     /* curl options */
@@ -220,13 +181,13 @@ bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageCl
     if (res == CURLE_OK) {
         logMsg = QString("Successfully upload, HTTP:%1").arg(httpCode);
         LOG_INFO(logMsg);
-        qDebug() << "Successfully upload";
+        qDebug() << logMsg;
     } else {
         logMsg = QString("Failed upload, HTTP:%1 error:%2")
                      .arg(httpCode)
                      .arg(curl_easy_strerror(res));
         LOG_ERROR(logMsg);
-        qDebug() << "Failed upload";
+        qDebug() << logMsg;
     }
 
     curl_mime_free(mime);

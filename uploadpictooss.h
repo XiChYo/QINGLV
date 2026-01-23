@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QFileInfo>
 #include <QThread>
+#include <cstddef>
 
 
 class uploadpictoOSS: public QThread
@@ -28,7 +29,7 @@ private:
     QString logMsg;
 
     // 设备id、ip、注册密钥、设备密钥、三大api_url
-    QString device_id = "qinglv-test";
+    QString device_id = "device-test";
     QString device_ip = "192.168.1.100";
     QString register_key = "register-key-2026";
     QString device_key;

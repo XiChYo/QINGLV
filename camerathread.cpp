@@ -142,6 +142,7 @@ void camerathread::run()
                 QString fileName = QString("img_%1.jpg")
                     .arg(QDateTime::currentDateTime()
                          .toString("yyyyMMdd_hhmmss_zzz"));
+
                 // 必须 copy，防止内存复用
                 emit frameReadySig(img.copy(), fileName);
 
