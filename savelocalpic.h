@@ -17,6 +17,8 @@ public:
 
     int testint = 0;
     int times = 0;
+private:
+    static bool dirInited;
 
 signals:
     void forOSSPathSig(const QString& FilePath, const int ImgClass);

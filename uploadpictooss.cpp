@@ -1,34 +1,19 @@
 #include "uploadpictooss.h"
 #include "logger.h"
 #include <QSettings>
-#include <QCoreApplication>
 
-#include <QNetworkAccessManager>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QJsonObject>
-#include <QJsonDocument>
-#include <QEventLoop>
-#include <QDebug>
-
-#include <QHttpMultiPart>
-#include <QHttpPart>
-#include <QFile>
-#include <QTimer>
 
 #include <curl/curl.h>
 #include <QFileInfo>
 
 uploadpictoOSS::uploadpictoOSS(QObject* parent)
 {
-    initializeOss();
+     initializeOss();
 }
 
 uploadpictoOSS::~uploadpictoOSS()
 {
-//    ShutdownSdk(); // 关闭oss sdk
 }
-
 bool uploadpictoOSS::initializeOss()
 {
 
@@ -69,19 +54,41 @@ bool uploadpictoOSS::initializeOss()
 
     bool success = false;
 
+
+    QJsonParseError parseError;
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData, &parseError);
+
+    if (parseError.error != QJsonParseError::NoError) {
+        qWarning() << "JSON parse error:" << parseError.errorString();
+        return false;
+    }
+
+    if (!jsonDoc.isObject()) {
+        qWarning() << "Response is not a JSON object";
+        return false;
+    }
+
+    QJsonObject obj = jsonDoc.object();
     if (reply->error() == QNetworkReply::NoError && httpCode == 201) {
-        qDebug() << "[OSS] 初始化成功";
-        qDebug() << "[OSS] Response:" << responseData;
+        logMsg = QString("Successfully Initial, Response:%1").arg(QString::fromUtf8(responseData));
+        LOG_INFO(logMsg);
         success = true;
+        if (obj.contains("device_key") && obj.value("device_key").isString()) {
+            device_key = obj.value("device_key").toString();
+            qDebug() << "device_key parsed:" << device_key;
+        } else {
+            qWarning() << "device_key not found in response";
+            return false;
+        }
     } else {
-        qDebug() << "[OSS] 初始化失败";
-        qDebug() << "[OSS] HTTP Code:" << httpCode;
-        qDebug() << "[OSS] Error:" << reply->errorString();
-        qDebug() << "[OSS] Response:" << responseData;
+        logMsg = QString("Failed Initial, HTTP Code:%1  Error:%2  Response:%3").arg(httpCode).arg(reply->errorString()).arg(QString::fromUtf8(responseData));
+        LOG_ERROR(logMsg);
     }
 
     reply->deleteLater();
-    return success;
+    int sH = send_heartbeat();
+    qDebug() << "sH = " << sH;
+    return sH;
 }
 
 int uploadpictoOSS::send_heartbeat()
@@ -117,13 +124,16 @@ int uploadpictoOSS::send_heartbeat()
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) return 1;
+
     return http_code == 200 ? 0 : 1;
 }
 
 bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageClass)
 {
     QFileInfo fileInfo(localFilePath);
+    qDebug()<<localFilePath;
     QString fileName = fileInfo.fileName();
+    qDebug()<<fileName;
 
     if (imageClass == 1)
         ossSaveRoad = "saveRawImage/" + fileName;
@@ -161,7 +171,7 @@ bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageCl
     curl_mime_name(part, "file");
     curl_mime_filedata(part, localFilePath.toUtf8().constData());
     curl_mime_filename(part, fileName.toUtf8().constData());
-    curl_mime_type(part, "image/jpg");
+//    curl_mime_type(part, "image/jpeg");
 
     /* curl options */
     curl_easy_setopt(curl, CURLOPT_URL, savepicAPI.toUtf8().constData());
@@ -169,17 +179,13 @@ bool uploadpictoOSS::uploadImage(const QString &localFilePath, const int imageCl
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 
-    /* HTTPS 场景（调试用，正式环境应开启校验） */
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-
     CURLcode res = curl_easy_perform(curl);
 
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     if (res == CURLE_OK) {
-        logMsg = QString("Successfully upload, HTTP:%1").arg(httpCode);
+        logMsg = QString("Successfully upload, HTTP:%1 error:%2").arg(httpCode).arg(curl_easy_strerror(res));
         LOG_INFO(logMsg);
         qDebug() << logMsg;
     } else {

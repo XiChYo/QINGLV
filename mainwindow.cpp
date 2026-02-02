@@ -600,7 +600,7 @@ void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
     logMsg = "Upload image to OSS: " + filePath + "ImgClass" + ImgClass;
     LOG_INFO(logMsg);
 
-    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
+//    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
 }
 
 void MainWindow::retryUploadFailedImages()

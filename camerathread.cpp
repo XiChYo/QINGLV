@@ -144,7 +144,7 @@ void camerathread::run()
                          .toString("yyyyMMdd_hhmmss_zzz"));
 
                 // 必须 copy，防止内存复用
-                emit frameReadySig(img.copy(), fileName);
+                emit frameReadySig(img, fileName);
 
                 MV_CC_FreeImageBuffer(m_hCam, &frame);
             }
