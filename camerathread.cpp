@@ -29,7 +29,6 @@ bool camerathread::openCamera()
         MV_CC_DEVICE_INFO_LIST devList = {0};
         memset(&devList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
         MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
-        qDebug() << devList.nDeviceNum;
 
         MV_CC_CreateHandle(&m_hCam, devList.pDeviceInfo[0]);
         int ret = MV_CC_OpenDevice(m_hCam);
@@ -48,9 +47,6 @@ bool camerathread::openCamera()
         MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
         MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
 
-
-
-        qDebug() << "Open ret = "<<ret;
         if (ret != MV_OK) {
             qDebug() << "Open camera failed";
             emit errorMegSig("Open camera failed");

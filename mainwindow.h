@@ -13,6 +13,9 @@
 #include <QTranslator>
 #include <QLabel>
 #include "savelocalpic.h"
+#include "ConveyorTracker.h"
+#include <thread>
+#include <atomic>
 
 
 QT_BEGIN_NAMESPACE
@@ -52,6 +55,28 @@ private slots:
 
     void on_checkforNew_clicked();
 
+    void on_singleControl_triggered();
+    void on_multiControl_triggered();
+    void on_speedInfo_triggered();
+
+    void on_chan1_clicked();
+
+    void on_chan2_clicked();
+
+    void on_chan3_clicked();
+
+    void on_chan4_clicked();
+
+    void on_chan5_clicked();
+
+    void on_chan6_clicked();
+
+    void on_chan7_clicked();
+
+    void on_chan8_clicked();
+
+    void on_chan9_clicked();
+
 private:
     Ui::MainWindow *ui;
     QList<QPushButton*> allButtons; // 保存所有在物料选择生成的按钮
@@ -75,6 +100,7 @@ private:
     camerathread* camThread;
     uploadpictoOSS* ossThread;
     saveLocalpic* savelocalpicThread;
+    ConveyorTracker m_tracker;
 
     QThread* threadPool;
 
@@ -90,5 +116,17 @@ private:
                               QList<QPushButton*>& targetList);
     void updateLanguageButton();
     void applyTextFromIni(const QString& groupName, const QList<QPushButton*>& buttons);
+
+
+    void onEncoderSpeed(const QByteArray& frame);
+
+    std::thread m_thread;
+    bool m_running;
+    float speed;
+signals:
+    void singleControl(QString order);
+    void batchControl(QString order);
+    void requestEncoder();
+
 };
 #endif // MAINWINDOW_H

@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QDir>
 #include "updatemanager.h"
+#include "boardcontrol.h"
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -75,6 +76,24 @@ MainWindow::MainWindow(QWidget *parent)
         ossThread = new uploadpictoOSS(this);
         ossThread->moveToThread(threadPool);
 
+        // boardcontrol
+        boardControl* ctrl = new boardControl;
+        ctrl->moveToThread(threadPool);
+        connect(threadPool, &QThread::started,
+                ctrl, &boardControl::initSerial);
+
+        connect(this, &MainWindow::singleControl,
+                ctrl, &boardControl::singleBoardControl);
+
+        connect(this, &MainWindow::batchControl,
+                ctrl, &boardControl::batchBoardControl);
+
+        connect(this, &MainWindow::requestEncoder,
+                ctrl, &boardControl::requestEncoderSpeed);
+
+        connect(ctrl, &boardControl::encoderSpeedReceived,
+                this, &MainWindow::onEncoderSpeed);
+
         // 保存本地文件线程
         savelocalpicThread = new saveLocalpic(this);
         savelocalpicThread->moveToThread(threadPool);
@@ -83,8 +102,8 @@ MainWindow::MainWindow(QWidget *parent)
         camThread = new camerathread(this);
         connect(camThread, &camerathread::frameReadySig,
                 this, &MainWindow::updateFrame);
-        connect(camThread, &camerathread::frameReadySig,
-                savelocalpicThread, &saveLocalpic::savelocalpicture);
+//        connect(camThread, &camerathread::frameReadySig,
+//                savelocalpicThread, &saveLocalpic::savelocalpicture);
         connect(savelocalpicThread, &saveLocalpic::forOSSPathSig,
                 this, &MainWindow::uploadOSSPath);
         connect(camThread, &camerathread::errorMegSig,
@@ -93,6 +112,20 @@ MainWindow::MainWindow(QWidget *parent)
             LOG_INFO("Camera thread started");
             camThread->start();  // 由于需要等间隔采样照片，等后面能得到皮带速度了，这个需要放在皮带速度代码后面 LN
         }
+
+//        trackerThread = new ConverorTracker(this);
+//        trackerThread->moveToThread(threadPool);
+
+        m_running = true;
+        m_thread = std::thread([this]()
+        {
+                while(m_running)
+        {
+                m_tracker.updateSpeed(speed);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    });
+        connect(&m_tracker, &ConveyorTracker::taskFinished, this, &MainWindow::on_chan1_clicked);
 
 
         // 线程池中的线程启动
@@ -114,6 +147,11 @@ MainWindow::~MainWindow()
         threadPool->wait();   // 阻塞等待线程真正结束
         delete threadPool;    // 释放线程对象
         threadPool = nullptr;
+    }
+    m_running = false;
+    if(m_thread.joinable())
+    {
+        m_thread.join();
     }
 }
 
@@ -571,6 +609,7 @@ void MainWindow::on_run_clicked()
 void MainWindow::on_powerbutton_clicked()
 {
     savelocalpicThread -> testint = 1;
+    m_tracker.addTask(1.9);
 //    // 弹出询问框
 //    QMessageBox::StandardButton reply;
 //    reply = QMessageBox::question(this, "关机确认", "是否要关机？",
@@ -593,6 +632,7 @@ void MainWindow::updateFrame(const QImage &img)
 {
     pixmapItem->setPixmap(QPixmap::fromImage(img));
     ui->cameraview->fitInView(pixmapItem, Qt::KeepAspectRatio);
+//    qDebug() << "Image size:" << img.width() << "x" << img.height();
 }
 
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
@@ -797,4 +837,80 @@ void MainWindow::on_checkforNew_clicked()
     });
 
     updater->checkForUpdate();
+}
+
+void MainWindow::on_singleControl_triggered()
+{
+    emit singleControl("01 01 01");
+}
+void MainWindow::on_multiControl_triggered()
+{
+    emit batchControl("01 00 15");
+}
+void MainWindow::on_speedInfo_triggered()
+{
+    emit requestEncoder();
+}
+void MainWindow::onEncoderSpeed(const QByteArray& frame)
+{
+    // frame 是原始串口数据
+//    qDebug() << "Encoder raw:" << frame.toHex(' ').toUpper();
+
+    // ===== 示例解析（你可以按协议改）=====
+    if (frame.size() < 8)
+        return;
+
+    // 假设：第 5、6 字节是速度，高字节在前
+    quint16 rotation =
+        (static_cast<quint8>(frame[6]) << 8) |
+         static_cast<quint8>(frame[7]);
+    speed = rotation * 0.502;
+    QString speed_text = QString::number(int(speed)) + "m/min";
+    ui->speed->setText(speed_text);
+}
+
+void MainWindow::on_chan1_clicked()
+{
+    qDebug()<<"on_chan1_clicked";
+    emit batchControl("01 01 FF");
+}
+
+void MainWindow::on_chan2_clicked()
+{
+    emit batchControl("02 01 FF");
+}
+
+void MainWindow::on_chan3_clicked()
+{
+    emit batchControl("03 01 FF");
+}
+
+void MainWindow::on_chan4_clicked()
+{
+    emit batchControl("04 01 FF");
+}
+
+void MainWindow::on_chan5_clicked()
+{
+    emit batchControl("05 01 FF");
+}
+
+void MainWindow::on_chan6_clicked()
+{
+    emit batchControl("06 01 FF");
+}
+
+void MainWindow::on_chan7_clicked()
+{
+    emit batchControl("07 01 FF");
+}
+
+void MainWindow::on_chan8_clicked()
+{
+    emit batchControl("08 01 FF");
+}
+
+void MainWindow::on_chan9_clicked()
+{
+    emit batchControl("09 01 FF");
 }

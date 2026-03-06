@@ -8,7 +8,7 @@
 
 uploadpictoOSS::uploadpictoOSS(QObject* parent)
 {
-     initializeOss();
+//     initializeOss();
 }
 
 uploadpictoOSS::~uploadpictoOSS()

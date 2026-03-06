@@ -1,0 +1,384 @@
+#include "boardcontrol.h"
+
+#include <fcntl.h>
+#include <unistd.h>
+#include <termios.h>
+#include <sys/select.h>
+#include <string.h>
+#include <QDebug>
+#include <QThread>
+#include <QElapsedTimer>
+#include <QTimer>
+#include <QThread>
+
+boardControl::boardControl(QObject *parent)
+    : QObject(parent)
+{
+}
+
+boardControl::~boardControl()
+{
+    closeSerial();
+}
+
+/* ========== 串口底层 ========== */
+
+bool boardControl::openSerial()
+{
+    m_fd = ::open(m_dev.toLocal8Bit().data(),
+                  O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (m_fd < 0) {
+        qDebug()<<"open serial failed";
+        emit errorOccured("open serial failed");
+        return false;
+    }
+    qDebug()<<"open serial succeed";
+
+    termios tty{};
+    tcgetattr(m_fd, &tty);
+    cfmakeraw(&tty);
+
+    cfsetispeed(&tty, B9600);
+    cfsetospeed(&tty, B9600);
+
+    tty.c_cflag |= (CLOCAL | CREAD);
+    tty.c_cflag &= ~PARENB;
+    tty.c_cflag &= ~CSTOPB;
+    tty.c_cflag &= ~CSIZE;
+    tty.c_cflag |= CS8;
+
+    tty.c_cc[VMIN]  = 0;
+    tty.c_cc[VTIME] = 0;
+
+    tcflush(m_fd, TCIOFLUSH);
+    tcsetattr(m_fd, TCSANOW, &tty);
+
+    return true;
+}
+
+void boardControl::closeSerial()
+{
+    if (m_fd >= 0) {
+        ::close(m_fd);
+        m_fd = -1;
+    }
+}
+
+bool boardControl::writeFrame(const QByteArray& frame)
+{
+    QMutexLocker locker(&m_serialMutex);
+    if (m_fd < 0)
+    {
+        qDebug()<<"writeFrame false";
+        return false;
+    }
+//    qDebug()<<"frame:";
+//    qDebug().noquote() << frame.toHex(' ').toUpper();
+    ssize_t ret = ::write(m_fd, frame.constData(), frame.size());
+    tcdrain(m_fd);
+//    qDebug() << "write ret:" << ret;
+
+//    return ::write(m_fd, frame.constData(), frame.size()) == frame.size();
+    return ret;
+}
+
+bool boardControl::readFrame(QByteArray& frame, int timeoutMs)
+{
+    const QByteArray head("\xAA\x55\x11\x05\x03\x0A", 6);
+    const QByteArray tail("\x55\xAA", 2);
+    const int frameLen = 11;
+
+    QElapsedTimer timer;
+    timer.start();
+
+    while (timer.elapsed() < timeoutMs)
+    {
+        // ===== select 等待 =====
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(m_fd, &rfds);
+
+        timeval tv{};
+        tv.tv_sec  = 0;
+        tv.tv_usec = 20 * 1000; // 20ms 小轮询
+
+        int ret = select(m_fd + 1, &rfds, nullptr, nullptr, &tv);
+        if (ret > 0)
+        {
+            char buf[64];
+            int n = ::read(m_fd, buf, sizeof(buf));
+            if (n > 0)
+            {
+                m_rxBuffer.append(buf, n);
+            }
+        }
+
+        // ===== ⭐尝试拆帧（关键）=====
+        while (true)
+        {
+            int headPos = m_rxBuffer.indexOf(head);
+            if (headPos < 0)
+            {
+                // 没找到帧头，防止缓存无限长
+                if (m_rxBuffer.size() > 64)
+                    m_rxBuffer.clear();
+                break;
+            }
+
+            // 数据不够一帧
+            if (m_rxBuffer.size() < headPos + frameLen)
+                break;
+
+            QByteArray oneFrame = m_rxBuffer.mid(headPos, frameLen);
+
+            // 校验帧尾
+            if (!oneFrame.endsWith(tail))
+            {
+                // 错位 → 丢1字节继续找
+                m_rxBuffer.remove(0, headPos + 1);
+                continue;
+            }
+
+            // ✅ 成功拿到完整帧
+            frame = oneFrame;
+
+            // 移除已处理数据
+            m_rxBuffer.remove(0, headPos + frameLen);
+            return true;
+        }
+    }
+    return false; // 超时
+}
+/* ========== 槽函数（在线程中执行） ========== */
+
+void boardControl::initSerial()
+{
+    if (!openSerial())
+    {
+        qDebug()<<"openSerial failed";
+        return;
+    }
+    qDebug()<<"openSerial succeed";
+
+    m_speedTimer = new QTimer(this);
+    connect(m_speedTimer, &QTimer::timeout,
+            this, &boardControl::requestEncoderSpeed);
+
+    m_speedTimer->start(10); // 每100ms一次（自己调）
+}
+
+void boardControl::singleBoardControl(QString order)
+{
+    qDebug() << "order:" << order;
+
+    // ---------- 1️⃣ 解析 order ----------
+    QByteArray field = QByteArray::fromHex(order.toLatin1());
+    if (field.size() != 3) {
+        qWarning() << "order format error!";
+        return;
+    }
+
+    // 解析喷阀号（第一个字节）
+    int valveId = static_cast<quint8>(field[0]);
+
+    // 忙碌检测（关键！！！）
+    if (m_valveBusySet.contains(valveId))
+    {
+        qDebug() << "valve" << valveId << "is busy, drop command";
+        return;
+    }
+
+    // 标记忙碌
+    m_valveBusySet.insert(valveId);
+
+    // ---------- 2️⃣ 发送开启帧 ----------
+    QByteArray openFrame = buildControlFrame(field);
+    writeFrame(openFrame);
+
+    // ---------- 3️⃣ 0.5 秒后发送关闭 ----------
+    QByteArray closeField = field;
+    closeField[2] = 0x00;  // ⭐ 最后一位改为关闭
+
+    QByteArray closeFrame = buildControlFrame(closeField);
+
+    QTimer::singleShot(500, this, [this, closeFrame, valveId]() {
+        writeFrame(closeFrame);
+        // ⭐⭐⭐⭐⭐ 释放忙碌（极其关键）
+        m_valveBusySet.remove(valveId);
+
+        qDebug() << "valve" << valveId << "released";
+    });
+}
+
+QByteArray boardControl::buildControlFrame(const QByteArray& field)
+{
+    // 固定头
+    QByteArray frame;
+    frame.append(char(0xAA));
+    frame.append(char(0x55));
+
+    // 固定字段
+    frame.append(char(0x11));
+    frame.append(char(0x05));
+    frame.append(char(0x01));
+
+    // 可变三字节
+    frame.append(field);
+
+    // ---------- ⭐ 计算校验 ----------
+    quint8 sum = 0;
+    sum += 0x11;
+    sum += 0x05;
+    sum += 0x01;
+    sum += static_cast<quint8>(field[0]);
+    sum += static_cast<quint8>(field[1]);
+    sum += static_cast<quint8>(field[2]);
+
+    quint8 checksum = sum & 0xFF;
+    frame.append(char(checksum));
+
+    // 帧尾
+    frame.append(char(0x55));
+    frame.append(char(0xAA));
+
+    qDebug() << "send:" << frame.toHex(' ').toUpper();
+
+    return frame;
+}
+
+
+void boardControl::batchBoardControl(QString order)
+{
+    qDebug() << "batch order:" << order;
+    qDebug() << "busy set:" << m_valveBusySet;
+
+    QByteArray field = QByteArray::fromHex(order.toLatin1());
+    if (field.size() != 3) {
+        qWarning() << "order format error!";
+        return;
+    }
+
+    // 解析喷阀号（第一个字节）
+    int valveId = static_cast<quint8>(field[0]);
+
+    // 忙碌检测（关键！！！）
+    if (m_valveBusySet.contains(valveId))
+    {
+        qDebug() << "valve" << valveId << "is busy, drop command";
+        return;
+    }
+
+    // 标记忙碌
+    m_valveBusySet.insert(valveId);
+
+    // ---------- 1️ 发送开启 ----------
+    QByteArray openFrame = buildBatchOpenFrame(field);
+    writeFrame(openFrame);
+
+    // ---------- 2️ 0.5 秒后发送关闭 ----------
+    QByteArray closeFrame = buildBatchCloseFrame(field);
+
+    QTimer::singleShot(300, this, [this, closeFrame, valveId]() {
+        writeFrame(closeFrame);
+        m_valveBusySet.remove(valveId);
+
+        qDebug() << "valve" << valveId << "released";
+    });
+}
+
+QByteArray boardControl::buildBatchOpenFrame(const QByteArray& field)
+{
+    quint8 b6 = static_cast<quint8>(field[0]);
+    quint8 b8 = static_cast<quint8>(field[1]);
+    quint8 b9 = static_cast<quint8>(field[2]);
+
+    // ⭐第7位 = bit1数量
+    quint8 bitCount = countBits(b8) + countBits(b9);
+
+    return buildBatchFrameCore(b6, bitCount, b8, b9);
+}
+
+QByteArray boardControl::buildBatchCloseFrame(const QByteArray& field)
+{
+    quint8 b6 = static_cast<quint8>(field[0]);
+
+    quint8 b7 = 0x09; //  固定 1111b
+    quint8 b8 = 0x00;
+    quint8 b9 = 0x00;
+
+    return buildBatchFrameCore(b6, b7, b8, b9);
+}
+
+QByteArray boardControl::buildBatchFrameCore(
+    quint8 b6,
+    quint8 b7,
+    quint8 b8,
+    quint8 b9)
+{
+    QByteArray frame;
+
+    // 帧头
+    frame.append(char(0xAA));
+    frame.append(char(0x55));
+
+    // 固定
+    frame.append(char(0x11));
+    frame.append(char(0x06));
+    frame.append(char(0x02));
+
+    // 数据区
+    frame.append(char(b6));
+    frame.append(char(b7));
+    frame.append(char(b8));
+    frame.append(char(b9));
+
+    // ---------- 校验 ----------
+    quint8 sum = 0;
+    sum += 0x11;
+    sum += 0x06;
+    sum += 0x02;
+    sum += b6;
+    sum += b7;
+    sum += b8;
+    sum += b9;
+
+    quint8 checksum = sum & 0xFF;
+    frame.append(char(checksum));
+
+    // 帧尾
+    frame.append(char(0x55));
+    frame.append(char(0xAA));
+
+    qDebug() << "batch send:" << frame.toHex(' ').toUpper();
+
+    return frame;
+}
+
+quint8 boardControl::countBits(quint8 v)
+{
+    quint8 cnt = 0;
+    while (v) {
+        cnt += (v & 1);
+        v >>= 1;
+    }
+    return cnt;
+}
+
+void boardControl::requestEncoderSpeed()
+{
+    QByteArray cmd = QByteArray::fromHex(
+        "AA 55 11 03 03 0A 21 55 AA");
+    writeFrame(cmd);
+
+    QByteArray rx;
+    if (readFrame(rx, 200)) {
+        emit encoderSpeedReceived(rx);
+    }
+}
+
+void boardControl::stopWork()
+{
+    closeSerial();
+}
+
+
