@@ -29,7 +29,8 @@ SOURCES += \
     mainwindow.cpp \
     savelocalpic.cpp \
     updatemanager.cpp \
-    uploadpictooss.cpp
+    uploadpictooss.cpp \
+    yolodetector.cpp
 
 HEADERS += \
     ConveyorTracker.h \
@@ -40,7 +41,8 @@ HEADERS += \
     library/mvs/includes/MvCameraControl.h \
     savelocalpic.h \
     updatemanager.h \
-    uploadpictooss.h
+    uploadpictooss.h \
+    yolodetector.h
 
 
 FORMS += \
@@ -66,5 +68,16 @@ unix:!macx: LIBS += -L$$PWD/bin/lib/aarch64/ -lMvCameraControl
 
 INCLUDEPATH += $$PWD/bin/lib/aarch64
 DEPENDPATH += $$PWD/bin/lib/aarch64
+
+# ONNX Runtime for YOLO inference
+# Install: sudo apt install libonnxruntime-dev (or download from https://github.com/microsoft/onnxruntime)
+unix:!macx {
+    LIBS += -lonnxruntime
+    INCLUDEPATH += /usr/include/onnxruntime
+    LIBS += -L/usr/lib -lonnxruntime
+}
+
+# YOLO model path configuration
+DEFINES += YOLO_MODEL_PATH=\"$$PWD/models/yolo.onnx\"
 
 
