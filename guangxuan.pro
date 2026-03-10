@@ -30,7 +30,8 @@ SOURCES += \
     savelocalpic.cpp \
     updatemanager.cpp \
     uploadpictooss.cpp \
-    yolodetector.cpp
+    yolodetector.cpp \
+    yolodetectorthread.cpp
 
 HEADERS += \
     ConveyorTracker.h \
@@ -42,7 +43,8 @@ HEADERS += \
     savelocalpic.h \
     updatemanager.h \
     uploadpictooss.h \
-    yolodetector.h
+    yolodetector.h \
+    yolodetectorthread.h
 
 
 FORMS += \

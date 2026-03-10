@@ -109,7 +109,72 @@ enabledClasses=bottle, cup, person  # 只检测这 3 类
 
 ## 使用示例
 
-### 在代码中使用
+### 线程化检测器 (推荐)
+
+`YoloDetectorThread` 在独立线程中运行，支持异步任务提交和信号回调：
+
+```cpp
+#include "yolodetectorthread.h"
+
+// 创建检测线程 (建议在 MainWindow 或单例中)
+YoloDetectorThread* yoloThread = new YoloDetectorThread(this);
+
+// 初始化
+if (!yoloThread->initialize("models/yolo.onnx", 0.5f, 0.4f)) {
+    qDebug() << "Failed to initialize YOLO:" << yoloThread->getLastError();
+    return;
+}
+
+// 可选：加载自定义类别
+yoloThread->loadClassesFromConfig("config.ini");
+yoloThread->setEnabledClasses({"bottle", "cup", "person"});
+
+// 连接信号
+connect(yoloThread, &YoloDetectorThread::detectionResult,
+        this, [](const QString& taskId, 
+                 const QVector<DetectionResult>& results,
+                 qint64 processingTimeMs) {
+    qDebug() << "Task" << taskId << "completed:";
+    for (const auto& det : results) {
+        qDebug() << "  -" << det.className 
+                 << "(" << det.confidence << ")"
+                 << det.boundingBox;
+    }
+    qDebug() << "Processing time:" << processingTimeMs << "ms";
+});
+
+connect(yoloThread, &YoloDetectorThread::initialized,
+        this, []() {
+    qDebug() << "YOLO detector ready!";
+});
+
+connect(yoloThread, &YoloDetectorThread::error,
+        this, [](const QString& error) {
+    qCritical() << "YOLO error:" << error;
+});
+
+// 启动检测线程
+yoloThread->startDetection();
+
+// 提交检测任务 (从相机线程或其他线程调用)
+QImage frame = ...; // 从相机获取
+QString taskId = yoloThread->submitDetectionTask(frame);
+qDebug() << "Task submitted:" << taskId;
+
+// 查询状态
+qDebug() << "Pending tasks:" << yoloThread->getPendingTaskCount();
+qDebug() << "Total processed:" << yoloThread->getTotalProcessedCount();
+qDebug() << "Avg inference time:" << yoloThread->getAverageInferenceTime() << "ms";
+
+// 同步检测 (阻塞调用，慎用)
+QVector<DetectionResult> results = yoloThread->detectSync(frame, 3000);
+
+// 停止
+yoloThread->stopDetection();
+yoloThread->wait();
+```
+
+### 在代码中使用 (基础 API)
 
 ```cpp
 #include "yolodetector.h"
@@ -170,17 +235,39 @@ qDebug() << "Bottle class ID:" << bottleId;
 
 ### 集成到相机线程
 
-修改 `camerathread.cpp` 在 `frameReadySig` 发出前进行 YOLO 检测：
+**方式 1: 使用独立 YOLO 线程 (推荐)**
 
 ```cpp
-// 在 camerathread.h 中添加
-#include "yolodetector.h"
-YoloDetector* m_yoloDetector = nullptr;
+// mainwindow.h
+#include "yolodetectorthread.h"
+YoloDetectorThread* m_yoloThread;
 
-// 在 run() 方法中
-QVector<DetectionResult> detections = m_yoloDetector->detect(img);
+// mainwindow.cpp 初始化
+m_yoloThread = new YoloDetectorThread(this);
+m_yoloThread->initialize("models/yolo.onnx");
+m_yoloThread->startDetection();
 
-// 发送带检测结果的通知
+// 连接相机帧信号到 YOLO 检测
+connect(m_cameraThread, &camerathread::frameReadySig,
+        m_yoloThread, [this](const QImage& img, const QString& fileName) {
+    m_yoloThread->submitDetectionTask(img);
+});
+
+// 处理检测结果
+connect(m_yoloThread, &YoloDetectorThread::detectionResult,
+        this, [this](const QString& taskId, 
+                     const QVector<DetectionResult>& results,
+                     qint64 processingTimeMs) {
+    // 在 UI 上绘制检测结果
+    drawDetections(results);
+});
+```
+
+**方式 2: 同步检测 (仅用于调试或低帧率场景)**
+
+```cpp
+// 在 camerathread 中直接调用 (会阻塞相机线程)
+QVector<DetectionResult> detections = m_yoloThread->detectSync(img, 100);
 emit frameReadySig(img, fileName, detections);
 ```
 
@@ -215,10 +302,46 @@ model.export(format='onnx')
 
 ## 性能优化
 
+### 线程化检测
+
+- ✅ **独立检测线程** - 不阻塞相机采集和 UI
+- ✅ **任务队列** - 自动管理待处理帧 (默认最多 10 帧)
+- ✅ **异步回调** - 通过信号获取结果
+- ✅ **性能统计** - 实时监控推理时间和处理数量
+
+### 模型选择
+
 - 使用较小的模型 (YOLOv8n) 获得更快的推理速度
-- 调整 `confThreshold` 减少误检
-- 在 GPU 上运行需要 CUDA 版本的 ONNX Runtime
+- 典型推理时间 (CPU):
+  - YOLOv8n: ~30-50ms
+  - YOLOv8s: ~50-80ms
+  - YOLOv8m: ~100-150ms
+
+### 配置优化
+
+- 调整 `confThreshold` 减少误检 (推荐 0.4-0.6)
+- 调整 `nmsThreshold` 控制重复检测 (推荐 0.3-0.5)
 - 降低输入分辨率可提升速度但可能影响精度
+
+### GPU 加速
+
+在 GPU 上运行需要 CUDA 版本的 ONNX Runtime:
+
+```bash
+# 安装 GPU 版本
+pip install onnxruntime-gpu
+
+# 或使用预编译包
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.18.0/onnxruntime-linux-x64-gpu-1.18.0.tgz
+```
+
+### 帧率控制
+
+如果相机帧率过高，可以:
+
+1. 增加 `captureIntervalMs` 减少采样频率
+2. 限制 YOLO 检测频率 (如每 3 帧检测 1 次)
+3. 使用任务队列自动丢弃过期帧
 
 ## 故障排除
 
@@ -237,11 +360,13 @@ model.export(format='onnx')
 
 ## 下一步计划
 
-- [ ] 在 UI 中显示检测结果
-- [ ] 支持自定义类别过滤
+- [ ] 在 UI 中显示检测结果 (绘制边界框和标签)
+- [ ] 支持自定义类别过滤 ✅ 已实现
 - [ ] 添加检测结果统计
 - [ ] 支持多模型切换
 - [ ] GPU 加速支持
+- [ ] 检测结果持久化 (保存到数据库或文件)
+- [ ] 支持 RTSP/网络相机输入
 
 ## 分支信息
 
