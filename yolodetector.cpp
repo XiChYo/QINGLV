@@ -2,6 +2,8 @@
 #include <QDebug>
 #include <QFile>
 #include <QDir>
+#include <QTextStream>
+#include <QSettings>
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -35,6 +37,11 @@ YoloDetector::YoloDetector() {
         return;
     }
     
+    // Load default COCO classes
+    loadDefaultClasses();
+}
+
+bool YoloDetector::loadDefaultClasses() {
     // Initialize COCO class names (80 classes)
     m_classNames = {
         "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
@@ -48,6 +55,14 @@ YoloDetector::YoloDetector() {
         "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
         "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
     };
+    
+    // Build name-to-id map
+    m_classNameToId.clear();
+    for (int i = 0; i < m_classNames.size(); ++i) {
+        m_classNameToId[m_classNames[i]] = i;
+    }
+    
+    return true;
 }
 
 YoloDetector::~YoloDetector() {
@@ -56,6 +71,122 @@ YoloDetector::~YoloDetector() {
         g_ort->ReleaseEnv(g_ortEnv);
         g_ortEnv = nullptr;
     }
+}
+
+bool YoloDetector::initialize(const QString& modelPath, 
+                               float confThreshold, 
+                               float nmsThreshold,
+                               int inputWidth,
+                               int inputHeight,
+                               const QStringList& customClasses) {
+    if (!QFile::exists(modelPath)) {
+        m_lastError = QString("Model file not found: %1").arg(modelPath);
+        qCritical() << m_lastError;
+        return false;
+    }
+    
+    m_modelPath = modelPath;
+    m_confThreshold = confThreshold;
+    m_nmsThreshold = nmsThreshold;
+    m_inputWidth = inputWidth;
+    m_inputHeight = inputHeight;
+    
+    // Load custom classes if provided
+    if (!customClasses.isEmpty()) {
+        m_classNames = customClasses;
+        m_classNameToId.clear();
+        for (int i = 0; i < m_classNames.size(); ++i) {
+            m_classNameToId[m_classNames[i]] = i;
+        }
+        qDebug() << "Loaded" << m_classNames.size() << "custom classes";
+    }
+    
+    return loadModel();
+}
+
+bool YoloDetector::loadClassesFromConfig(const QString& configPath) {
+    if (!QFile::exists(configPath)) {
+        m_lastError = QString("Config file not found: %1").arg(configPath);
+        qCritical() << m_lastError;
+        return false;
+    }
+    
+    QSettings settings(configPath, QSettings::IniFormat);
+    settings.beginGroup("YOLO_Classes");
+    
+    // Read number of classes
+    int numClasses = settings.value("count", 0).toInt();
+    if (numClasses <= 0) {
+        // Try to read classes as a comma-separated list
+        QString classList = settings.value("classes", "").toString();
+        if (!classList.isEmpty()) {
+            m_classNames = classList.split(',', Qt::SkipEmptyParts);
+            for (int i = 0; i < m_classNames.size(); ++i) {
+                m_classNames[i] = m_classNames[i].trimmed();
+            }
+        }
+    } else {
+        // Read classes by index
+        m_classNames.clear();
+        for (int i = 0; i < numClasses; ++i) {
+            QString className = settings.value(QString("class%1").arg(i), "").toString();
+            if (!className.isEmpty()) {
+                m_classNames.append(className);
+            }
+        }
+    }
+    
+    settings.endGroup();
+    
+    if (m_classNames.isEmpty()) {
+        m_lastError = "No classes found in config, using default COCO classes";
+        qWarning() << m_lastError;
+        return loadDefaultClasses();
+    }
+    
+    // Build name-to-id map
+    m_classNameToId.clear();
+    for (int i = 0; i < m_classNames.size(); ++i) {
+        m_classNameToId[m_classNames[i]] = i;
+    }
+    
+    qDebug() << "Loaded" << m_classNames.size() << "classes from config:" << m_classNames;
+    return true;
+}
+
+void YoloDetector::setEnabledClasses(const QStringList& classes) {
+    m_enabledClasses = classes;
+    m_enabledClassIds.clear();
+    for (const auto& className : classes) {
+        int id = getClassId(className);
+        if (id >= 0) {
+            m_enabledClassIds.append(id);
+        }
+    }
+    m_useClassFilter = !m_enabledClasses.isEmpty();
+    qDebug() << "Enabled classes filter:" << m_enabledClasses << "(IDs:" << m_enabledClassIds << ")";
+}
+
+void YoloDetector::setEnabledClassIds(const QVector<int>& classIds) {
+    m_enabledClassIds = classIds;
+    m_enabledClasses.clear();
+    for (int id : classIds) {
+        if (id >= 0 && id < m_classNames.size()) {
+            m_enabledClasses.append(m_classNames[id]);
+        }
+    }
+    m_useClassFilter = !m_enabledClassIds.isEmpty();
+}
+
+bool YoloDetector::isClassEnabled(int classId) const {
+    if (!m_useClassFilter) {
+        return true; // No filter, all classes enabled
+    }
+    return m_enabledClassIds.contains(classId);
+}
+
+int YoloDetector::getClassId(const QString& className) const {
+    return m_classNameToId.value(className, -1);
 }
 
 bool YoloDetector::initialize(const QString& modelPath, float confThreshold, float nmsThreshold) {
@@ -266,6 +397,11 @@ QVector<DetectionResult> YoloDetector::postprocessResults(float* output, int img
         }
         
         if (maxConf >= m_confThreshold && maxClassId >= 0) {
+            // Check if this class is enabled (if filter is active)
+            if (!isClassEnabled(maxClassId)) {
+                continue; // Skip disabled classes
+            }
+            
             // Get bounding box (center_x, center_y, width, height)
             float cx = output[0 * numDetections + i];
             float cy = output[1 * numDetections + i];

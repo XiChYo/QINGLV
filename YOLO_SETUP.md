@@ -67,7 +67,45 @@ confThreshold=0.5         # 置信度阈值 (0-1)
 nmsThreshold=0.4          # NMS 阈值 (0-1)
 inputWidth=640            # 模型输入宽度
 inputHeight=640           # 模型输入高度
+
+# 启用的类别过滤器 (可选，空表示检测所有类别)
+# enabledClasses=bottle, cup, person
 ```
+
+### 自定义检测类别
+
+**默认**使用 COCO 80 类。如需自定义类别，在 `config.ini` 中添加 `[YOLO_Classes]` 段：
+
+#### 方式 1: 逐个列出 (推荐)
+
+```ini
+[YOLO_Classes]
+count=5
+class0=bottle
+class1=cup
+class2=person
+class3=chair
+class4=dining table
+```
+
+#### 方式 2: 逗号分隔列表
+
+```ini
+[YOLO_Classes]
+count=0
+classes=bottle, cup, person, chair, dining table
+```
+
+#### 类别过滤器
+
+如果模型支持更多类别，但只想检测特定几种：
+
+```ini
+[YOLO]
+enabledClasses=bottle, cup, person  # 只检测这 3 类
+```
+
+**注意**: 自定义类别需要配合对应的 YOLO 模型使用。如果使用 COCO 预训练模型，请使用 COCO 类别名称。
 
 ## 使用示例
 
@@ -79,11 +117,32 @@ inputHeight=640           # 模型输入高度
 // 创建检测器
 YoloDetector detector;
 
-// 初始化模型
+// 方式 1: 使用默认 COCO 类别
 if (!detector.initialize("models/yolo.onnx", 0.5f, 0.4f)) {
     qDebug() << "Failed to load YOLO model:" << detector.getLastError();
     return;
 }
+
+// 方式 2: 从配置文件加载自定义类别
+if (!detector.loadClassesFromConfig("config.ini")) {
+    qDebug() << "Failed to load classes from config";
+}
+if (!detector.initialize("models/yolo.onnx", 0.5f, 0.4f, 640, 640, detector.getAvailableClasses())) {
+    qDebug() << "Failed to load YOLO model:" << detector.getLastError();
+    return;
+}
+
+// 方式 3: 直接在代码中指定自定义类别
+QStringList customClasses = {"bottle", "cup", "person", "chair"};
+if (!detector.initialize("models/yolo.onnx", 0.5f, 0.4f, 640, 640, customClasses)) {
+    qDebug() << "Failed to load YOLO model:" << detector.getLastError();
+    return;
+}
+
+// 可选：设置类别过滤器 (只检测特定类别)
+detector.setEnabledClasses({"bottle", "cup"});  // 只检测瓶子和杯子
+// 或者
+detector.setEnabledClassIds({0, 1});  // 只检测 ID 为 0 和 1 的类别
 
 // 检测图像
 QImage image = ...; // 从相机获取的图像
@@ -92,12 +151,21 @@ QVector<DetectionResult> results = detector.detect(image);
 // 处理结果
 for (const auto& det : results) {
     qDebug() << "Detected:" << det.className 
+             << "Class ID:" << det.classId
              << "Confidence:" << det.confidence
              << "Box:" << det.boundingBox;
     
     // 在图像上绘制检测结果
     // ...
 }
+
+// 获取所有可用类别
+QStringList allClasses = detector.getAvailableClasses();
+qDebug() << "Available classes:" << allClasses;
+
+// 获取类别 ID
+int bottleId = detector.getClassId("bottle");
+qDebug() << "Bottle class ID:" << bottleId;
 ```
 
 ### 集成到相机线程
