@@ -25,17 +25,29 @@ boardControl::~boardControl()
 
 bool boardControl::openSerial()
 {
+    int jud = 0;
+    while(1)
+    {
     m_fd = ::open(m_dev.toLocal8Bit().data(),
                   O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (m_fd < 0) {
+    if (m_fd < 0 && jud == 0) {
+            jud++;
+            m_dev = "/dev/ttyUSB1";
+            continue;
+    }
+    if(m_fd < 0 && jud == 1)
+    {
         qDebug()<<"open serial failed";
         emit errorOccured("open serial failed");
         return false;
+    }
+    break;
     }
     qDebug()<<"open serial succeed";
 
     termios tty{};
     tcgetattr(m_fd, &tty);
+
     cfmakeraw(&tty);
 
     cfsetispeed(&tty, B9600);
@@ -45,6 +57,9 @@ bool boardControl::openSerial()
     tty.c_cflag &= ~PARENB;
     tty.c_cflag &= ~CSTOPB;
     tty.c_cflag &= ~CSIZE;
+
+//    tty.c_cflag &= ~CRTSCTS;
+
     tty.c_cflag |= CS8;
 
     tty.c_cc[VMIN]  = 0;
@@ -52,6 +67,7 @@ bool boardControl::openSerial()
 
     tcflush(m_fd, TCIOFLUSH);
     tcsetattr(m_fd, TCSANOW, &tty);
+
 
     return true;
 }
@@ -64,21 +80,22 @@ void boardControl::closeSerial()
     }
 }
 
-bool boardControl::writeFrame(const QByteArray& frame)
+bool boardControl::writeFrame(const QByteArray& frame, int speedOrjet)
 {
+    if (speedRead == false && speedOrjet == 3){
+        return false;
+    }
     QMutexLocker locker(&m_serialMutex);
+
     if (m_fd < 0)
     {
         qDebug()<<"writeFrame false";
         return false;
     }
-//    qDebug()<<"frame:";
-//    qDebug().noquote() << frame.toHex(' ').toUpper();
+
     ssize_t ret = ::write(m_fd, frame.constData(), frame.size());
     tcdrain(m_fd);
-//    qDebug() << "write ret:" << ret;
 
-//    return ::write(m_fd, frame.constData(), frame.size()) == frame.size();
     return ret;
 }
 
@@ -110,7 +127,11 @@ bool boardControl::readFrame(QByteArray& frame, int timeoutMs)
             if (n > 0)
             {
                 m_rxBuffer.append(buf, n);
+            }else if (errno != EAGAIN)
+            {
+                qDebug()<<"read error"<<strerror(errno);
             }
+
         }
 
         // ===== ⭐尝试拆帧（关键）=====
@@ -164,7 +185,7 @@ void boardControl::initSerial()
     connect(m_speedTimer, &QTimer::timeout,
             this, &boardControl::requestEncoderSpeed);
 
-    m_speedTimer->start(10); // 每100ms一次（自己调）
+    m_speedTimer->start(500);
 }
 
 void boardControl::singleBoardControl(QString order)
@@ -193,7 +214,7 @@ void boardControl::singleBoardControl(QString order)
 
     // ---------- 2️⃣ 发送开启帧 ----------
     QByteArray openFrame = buildControlFrame(field);
-    writeFrame(openFrame);
+    writeFrame(openFrame, 1);
 
     // ---------- 3️⃣ 0.5 秒后发送关闭 ----------
     QByteArray closeField = field;
@@ -202,7 +223,7 @@ void boardControl::singleBoardControl(QString order)
     QByteArray closeFrame = buildControlFrame(closeField);
 
     QTimer::singleShot(500, this, [this, closeFrame, valveId]() {
-        writeFrame(closeFrame);
+        writeFrame(closeFrame, 1);
         // ⭐⭐⭐⭐⭐ 释放忙碌（极其关键）
         m_valveBusySet.remove(valveId);
 
@@ -249,8 +270,9 @@ QByteArray boardControl::buildControlFrame(const QByteArray& field)
 
 void boardControl::batchBoardControl(QString order)
 {
-    qDebug() << "batch order:" << order;
-    qDebug() << "busy set:" << m_valveBusySet;
+    qDebug() << "speedRead:false";
+    speedRead = false;
+//    qDebug() << "busy set:" << m_valveBusySet;
 
     QByteArray field = QByteArray::fromHex(order.toLatin1());
     if (field.size() != 3) {
@@ -273,17 +295,29 @@ void boardControl::batchBoardControl(QString order)
 
     // ---------- 1️ 发送开启 ----------
     QByteArray openFrame = buildBatchOpenFrame(field);
-    writeFrame(openFrame);
+//    qDebug()<<"openframe:"<<openFrame.toHex(' ').toUpper();
+
+    tcflush(m_fd,TCIFLUSH);
+    m_rxBuffer.clear();
+    writeFrame(openFrame, 2);
 
     // ---------- 2️ 0.5 秒后发送关闭 ----------
     QByteArray closeFrame = buildBatchCloseFrame(field);
+//    qDebug()<<"closeFrame:"<<closeFrame.toHex(' ').toUpper();
 
-    QTimer::singleShot(300, this, [this, closeFrame, valveId]() {
-        writeFrame(closeFrame);
-        m_valveBusySet.remove(valveId);
+    QThread::msleep(300);
 
-        qDebug() << "valve" << valveId << "released";
-    });
+//    qDebug() << "singleShot:S";
+    tcflush(m_fd,TCIFLUSH);
+    m_rxBuffer.clear();
+
+    writeFrame(closeFrame, 2);
+    m_valveBusySet.remove(valveId);
+
+//    qDebug() << "valve" << valveId << "released";
+
+    speedRead = true;
+    qDebug() << "speedRead:true";
 }
 
 QByteArray boardControl::buildBatchOpenFrame(const QByteArray& field)
@@ -349,7 +383,7 @@ QByteArray boardControl::buildBatchFrameCore(
     frame.append(char(0x55));
     frame.append(char(0xAA));
 
-    qDebug() << "batch send:" << frame.toHex(' ').toUpper();
+//    qDebug() << "batch send:" << frame.toHex(' ').toUpper();
 
     return frame;
 }
@@ -366,13 +400,22 @@ quint8 boardControl::countBits(quint8 v)
 
 void boardControl::requestEncoderSpeed()
 {
+    if(speedRead)
+    {
     QByteArray cmd = QByteArray::fromHex(
         "AA 55 11 03 03 0A 21 55 AA");
-    writeFrame(cmd);
+    writeFrame(cmd, 3);
 
     QByteArray rx;
-    if (readFrame(rx, 200)) {
+
+    tcflush(m_fd,TCIFLUSH);
+    m_rxBuffer.clear();
+    if (readFrame(rx, 50)) {
+//        qDebug()<<"readFrame"<<rx.toHex(' ').toUpper();
+
         emit encoderSpeedReceived(rx);
+
+    }
     }
 }
 

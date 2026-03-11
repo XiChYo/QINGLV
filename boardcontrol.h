@@ -30,7 +30,7 @@ signals:
 private:
     bool openSerial();
     void closeSerial();
-    bool writeFrame(const QByteArray& frame);
+    bool writeFrame(const QByteArray& frame, int speedOrjet);
     bool readFrame(QByteArray& frame, int timeoutMs);
 
     QByteArray buildSingleControlFrame(const QByteArray& field);
@@ -40,8 +40,7 @@ private:
     QByteArray buildBatchFrameCore(quint8, quint8, quint8, quint8);
     quint8 countBits(quint8 v);
 
-    int sin = 0;
-    int bat = 0;
+    bool speedRead = true;
 
     QSet<int> m_valveBusySet;   // 正在工作的喷阀集合
 

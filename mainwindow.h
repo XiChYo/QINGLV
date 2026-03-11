@@ -100,6 +100,7 @@ private:
     camerathread* camThread;
     uploadpictoOSS* ossThread;
     saveLocalpic* savelocalpicThread;
+
     ConveyorTracker m_tracker;
 
     QThread* threadPool;

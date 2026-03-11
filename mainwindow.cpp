@@ -77,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
         ossThread->moveToThread(threadPool);
 
         // boardcontrol
-        boardControl* ctrl = new boardControl;
+        boardControl* ctrl = new boardControl();
         ctrl->moveToThread(threadPool);
         connect(threadPool, &QThread::started,
                 ctrl, &boardControl::initSerial);
@@ -125,7 +125,7 @@ MainWindow::MainWindow(QWidget *parent)
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     });
-        connect(&m_tracker, &ConveyorTracker::taskFinished, this, &MainWindow::on_chan1_clicked);
+        connect(&m_tracker, &ConveyorTracker::taskFinished, this, &MainWindow::on_chan3_clicked);
 
 
         // 线程池中的线程启动
@@ -225,8 +225,8 @@ void MainWindow::cameraerrorMegSig(const QString &msg)
     logMsg = "[Camera Error]: " + msg;
     LOG_ERROR(logMsg);
 
-    QMessageBox::critical(this,"相机错误", msg);
-    QMessageBox::critical(this,"相机错误", "请检查相机后重启软件");
+//    QMessageBox::critical(this,"相机错误", msg);
+//    QMessageBox::critical(this,"相机错误", "请检查相机后重启软件");
 }
 void MainWindow::on_homepage_clicked()
 {
@@ -609,7 +609,7 @@ void MainWindow::on_run_clicked()
 void MainWindow::on_powerbutton_clicked()
 {
     savelocalpicThread -> testint = 1;
-    m_tracker.addTask(1.9);
+    m_tracker.addTask(1.75);
 //    // 弹出询问框
 //    QMessageBox::StandardButton reply;
 //    reply = QMessageBox::question(this, "关机确认", "是否要关机？",
@@ -854,7 +854,7 @@ void MainWindow::on_speedInfo_triggered()
 void MainWindow::onEncoderSpeed(const QByteArray& frame)
 {
     // frame 是原始串口数据
-//    qDebug() << "Encoder raw:" << frame.toHex(' ').toUpper();
+//    qDebug() << "onEncoderSpeed Encoder raw:" << frame.toHex(' ').toUpper();
 
     // ===== 示例解析（你可以按协议改）=====
     if (frame.size() < 8)
@@ -871,12 +871,13 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
 
 void MainWindow::on_chan1_clicked()
 {
-    qDebug()<<"on_chan1_clicked";
+//    qDebug()<<"on_chan1_clicked";
     emit batchControl("01 01 FF");
 }
 
 void MainWindow::on_chan2_clicked()
 {
+//    emit batchControl("02 01 FF");
     emit batchControl("02 01 FF");
 }
 
