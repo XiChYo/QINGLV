@@ -110,11 +110,8 @@ MainWindow::MainWindow(QWidget *parent)
                 this, &MainWindow::cameraerrorMegSig,Qt::QueuedConnection);
         if (camThread->openCamera()) {
             LOG_INFO("Camera thread started");
-            camThread->start();  // 由于需要等间隔采样照片，等后面能得到皮带速度了，这个需要放在皮带速度代码后面 LN
+            camThread->start();
         }
-
-//        trackerThread = new ConverorTracker(this);
-//        trackerThread->moveToThread(threadPool);
 
         m_running = true;
         m_thread = std::thread([this]()
@@ -224,9 +221,6 @@ void MainWindow::cameraerrorMegSig(const QString &msg)
 {
     logMsg = "[Camera Error]: " + msg;
     LOG_ERROR(logMsg);
-
-//    QMessageBox::critical(this,"相机错误", msg);
-//    QMessageBox::critical(this,"相机错误", "请检查相机后重启软件");
 }
 void MainWindow::on_homepage_clicked()
 {
@@ -431,7 +425,6 @@ void MainWindow::onAnyButtonClicked()
                     "border: 1px solid #555555;"
                     "}"
         );
-
     }
 }
 
@@ -872,13 +865,13 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
 void MainWindow::on_chan1_clicked()
 {
 //    qDebug()<<"on_chan1_clicked";
-    emit batchControl("01 01 FF");
+    emit singleControl("02 01 01");
 }
 
 void MainWindow::on_chan2_clicked()
 {
 //    emit batchControl("02 01 FF");
-    emit batchControl("02 01 FF");
+    emit batchControl("02 00 00");
 }
 
 void MainWindow::on_chan3_clicked()

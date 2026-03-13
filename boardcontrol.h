@@ -28,6 +28,8 @@ signals:
     void errorOccured(QString msg);
 
 private:
+    bool busy = false;
+
     bool openSerial();
     void closeSerial();
     bool writeFrame(const QByteArray& frame, int speedOrjet);
@@ -47,11 +49,14 @@ private:
 private:
     QMutex m_serialMutex;
 
+    QMutex m_writeMutex;
+
     QByteArray m_rxBuffer;
 
     QTimer* m_speedTimer{nullptr};
 
     int m_fd{-1};
+    int m_fd1{-1};
     QString m_dev{"/dev/ttyUSB0"};
 };
 
