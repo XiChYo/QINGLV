@@ -43,6 +43,7 @@ static bool waitForModelReady(yolothread& yolo, bool& modelReadyOk, int timeoutM
     timer.setSingleShot(true);
 
     QObject::connect(&timer, &QTimer::timeout, &loop, [&]() {
+        qWarning() << "Wait model ready timeout after" << timeoutMs << "ms";
         modelReadyOk = false;
         loop.quit();
     });
@@ -95,9 +96,9 @@ static bool testThreadCommunication(yolothread& yolo, const QImage& inputImage)
     QObject::connect(&caller, &ThreadCaller::requestPredictSig,
                      &yolo, &yolothread::predictAsync, Qt::QueuedConnection);
     QObject::connect(&yolo, &yolothread::setEnabledClassesDoneSig,
-                     &caller, &ThreadCaller::onSetClassesDone, Qt::QueuedConnection);
+                     &caller, &ThreadCaller::onSetClassesDone);
     QObject::connect(&yolo, &yolothread::predictDoneSig,
-                     &caller, &ThreadCaller::onPredictDone, Qt::QueuedConnection);
+                     &caller, &ThreadCaller::onPredictDone);
 
     QEventLoop setLoop;
     QTimer setTimer;
@@ -150,12 +151,15 @@ int main(int argc, char *argv[])
 
     yolothread yolo(modelPath);
     yolo.start();
+    qInfo() << "YOLO thread started, waiting for model ready...";
 
     bool modelReadyOk = false;
     if (!waitForModelReady(yolo, modelReadyOk)) {
+        qWarning() << "Model is not ready, abort tests";
         yolo.stop();
         return -1;
     }
+    qInfo() << "Model ready, start running tests";
 
     const bool passA = testDirectApi(yolo, inputImage);
     const bool passB = testThreadCommunication(yolo, inputImage);

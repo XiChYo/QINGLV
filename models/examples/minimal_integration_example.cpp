@@ -2,6 +2,7 @@
 #include <QImage>
 #include <QHash>
 #include <QDebug>
+#include <QMetaType>
 
 #include "camerathread.h"
 #include "models/yolothread.h"
@@ -87,12 +88,8 @@ private slots:
         const quint64 taskId = ++m_taskIdSeed;
         m_taskSource.insert(taskId, fileName);
 
-        // Cross-thread async inference call.
-        QMetaObject::invokeMethod(m_yoloThread,
-                                  "predictAsync",
-                                  Qt::QueuedConnection,
-                                  Q_ARG(quint64, taskId),
-                                  Q_ARG(QImage, img.copy())); // copy to avoid buffer reuse
+        // Use thread wrapper async API directly. Image is copied to avoid buffer reuse.
+        m_yoloThread->predictAsync(taskId, img.copy());
     }
 
     void onPredictDone(const YoloTaskResult& result)
