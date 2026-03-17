@@ -7,6 +7,7 @@ CONFIG += utf8_source
 CONFIG += link_pkgconfig
 CONFIG += ssl
 PKGCONFIG += libcurl
+PKGCONFIG += opencv4
 
 
 # The following define makes your compiler emit warnings if you use
@@ -27,9 +28,12 @@ SOURCES += \
     logger.cpp \
     main.cpp \
     mainwindow.cpp \
+    postprocess.cpp \
     savelocalpic.cpp \
     updatemanager.cpp \
-    uploadpictooss.cpp
+    uploadpictooss.cpp \
+    yolorecognition.cpp \
+    yolothread.cpp
 
 HEADERS += \
     ConveyorTracker.h \
@@ -38,9 +42,13 @@ HEADERS += \
     logger.h \
     mainwindow.h \
     library/mvs/includes/MvCameraControl.h \
+    postprocess.h \
     savelocalpic.h \
     updatemanager.h \
-    uploadpictooss.h
+    uploadpictooss.h \
+    yolorecognition.h \
+    yoloresulttypes.h \
+    yolothread.h
 
 
 FORMS += \
@@ -68,3 +76,8 @@ INCLUDEPATH += $$PWD/bin/lib/aarch64
 DEPENDPATH += $$PWD/bin/lib/aarch64
 
 
+
+unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/ -lrknnrt
+
+INCLUDEPATH += $$PWD/../../../../../usr/include
+DEPENDPATH += $$PWD/../../../../../usr/include
