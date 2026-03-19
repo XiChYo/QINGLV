@@ -16,6 +16,9 @@
 #include "ConveyorTracker.h"
 #include <thread>
 #include <atomic>
+#include "yolorecognition.h"
+#include "yolothread.h"
+#include "caldistance.h"
 
 
 QT_BEGIN_NAMESPACE
@@ -100,6 +103,9 @@ private:
     camerathread* camThread;
     uploadpictoOSS* ossThread;
     saveLocalpic* savelocalpicThread;
+    yolorecognition* yolorecogThread;
+    yolothread* m_yolothread;
+    calDistance* m_calDistance;
 
     ConveyorTracker m_tracker;
 
@@ -128,6 +134,7 @@ signals:
     void singleControl(QString order);
     void batchControl(QString order);
     void requestEncoder();
+    void yoloImg(const QImage& image);
 
 };
 #endif // MAINWINDOW_H

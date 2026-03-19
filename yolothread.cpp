@@ -16,6 +16,8 @@
 #include <opencv2/opencv.hpp>
 #include <rknn_api.h>
 
+#include <QDebug>
+
 #include "logger.h"
 #include "postprocess.h"
 
@@ -505,7 +507,7 @@ private:
     std::vector<rknn_tensor_attr> m_outputAttrs;
 };
 
-yolothread::yolothread(const QString& modelPath, QObject* parent)
+yolothread::yolothread(QObject* parent)
     : QThread(parent)
 {
     qRegisterMetaType<QList<int>>("QList<int>");
@@ -552,17 +554,20 @@ void yolothread::stop()
 
 bool yolothread::setEnabledClasses(const QList<int>& classIds)
 {
-    if (!isRunning() || m_worker == nullptr) {
-        return false;
-    }
+//    if (!isRunning() || m_worker == nullptr) {
+//        qDebug()<<"isrunning"<<isRunning();
+//        qDebug()<<"m_worker";
+//        return false;
+//    }
 
     bool ok = false;
-    const Qt::ConnectionType ct = (QThread::currentThread() == this) ? Qt::DirectConnection : Qt::BlockingQueuedConnection;
+//    const Qt::ConnectionType ct = (QThread::currentThread() == this) ? Qt::DirectConnection : Qt::BlockingQueuedConnection;
     QMetaObject::invokeMethod(m_worker,
                               "setEnabledClassesInWorker",
-                              ct,
+                              Qt::QueuedConnection,
                               Q_RETURN_ARG(bool, ok),
                               Q_ARG(QList<int>, classIds));
+//    qDebug()<<"m_worker";
     return ok;
 }
 
@@ -571,10 +576,10 @@ YoloTaskResult yolothread::predict(quint64 taskId, const QImage& image)
     YoloTaskResult result;
     result.taskId = taskId;
 
-    if (!isRunning() || m_worker == nullptr) {
-        result.errorMessage = "YOLO thread is not running";
-        return result;
-    }
+//    if (!isRunning() || m_worker == nullptr) {
+//        result.errorMessage = "YOLO thread is not running";
+//        return result;
+//    }
 
     const Qt::ConnectionType ct = (QThread::currentThread() == this) ? Qt::DirectConnection : Qt::BlockingQueuedConnection;
     QMetaObject::invokeMethod(m_worker,
@@ -622,6 +627,32 @@ void yolothread::predictAsync(quint64 taskId, const QImage& image)
                               Qt::QueuedConnection,
                               Q_ARG(quint64, taskId),
                               Q_ARG(QImage, image));
+}
+
+bool yolothread::yoloPredict(const QImage& inputImage)
+{
+    const bool setOk = setEnabledClasses({0, 1, 2, 3, 4, 5, 6, 7, 8});
+    if (!setOk) {
+        qDebug() << "setOk" << setOk;
+        return false;
+    }
+
+    qDebug() << "YoloTaskResult";
+
+    const YoloTaskResult result = predict(1001, inputImage);
+    if (!result.success) {
+        qWarning() << "predict failed in direct API:" << result.errorMessage;
+        return false;
+    }
+
+    qInfo() << "TaskId:" << result.taskId << ", object count:" << result.objects.size();
+    for (const auto& obj : result.objects) {
+        qInfo() << " class=" << obj.classId
+                << " score=" << obj.score
+                << " center=(" << obj.center.x() << "," << obj.center.y() << ")"
+                << " segmentation points=" << obj.segmentation.size();
+    }
+    return true;
 }
 
 #include "yolothread.moc"

@@ -40,7 +40,7 @@ class uploadpictoOSS: public QThread
 {
     Q_OBJECT
 public:
-    uploadpictoOSS(QObject* parent);
+    uploadpictoOSS(QObject* parent = nullptr);
     ~uploadpictoOSS();
 
     // 相机读取的照片先保存本地，然后再由本地上传到云端，必须返回true才算上传成功

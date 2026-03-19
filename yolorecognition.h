@@ -1,12 +1,28 @@
 #ifndef YOLORECOGNITION_H
 #define YOLORECOGNITION_H
-
-
-class yolorecognition
+#include <QImage>
+#include <opencv2/opencv.hpp>
+#include <QObject>
+#include <QDebug>
+#include <QPoint>
+#include "rknn_api.h"
+#include "postprocess.h"
+class yolorecognition : public QObject
 {
+    Q_OBJECT
 public:
-    yolorecognition();
-    int recognition(int argc, char** argv);
+    explicit yolorecognition(QObject* parent = nullptr);
+    cv::Mat QImage2Mat(const QImage& image);
+    char* model = "model.rknn";
+    QPoint m_point;
+    QImage matToQImage(const cv::Mat& mat);
+public slots:
+    int recognition(const QImage& image);
+signals:
+    void objPointSig(QPoint objPoint);
+    void resultImgSig(const QImage& img);
+private:
+    bool initTF = false;
 };
 
 #endif // YOLORECOGNITION_H

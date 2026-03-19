@@ -24,6 +24,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     ConveyorTracker.cpp \
     boardcontrol.cpp \
+    caldistance.cpp \
     camerathread.cpp \
     logger.cpp \
     main.cpp \
@@ -38,6 +39,7 @@ SOURCES += \
 HEADERS += \
     ConveyorTracker.h \
     boardcontrol.h \
+    caldistance.h \
     camerathread.h \
     logger.h \
     mainwindow.h \
@@ -81,3 +83,5 @@ unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/ -lrknnrt
 
 INCLUDEPATH += $$PWD/../../../../../usr/include
 DEPENDPATH += $$PWD/../../../../../usr/include
+
+#INCLUDEPATH += /usr/include/c++/9

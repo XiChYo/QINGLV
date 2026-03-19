@@ -10,7 +10,7 @@ class yolothread : public QThread
 {
     Q_OBJECT
 public:
-    explicit yolothread(const QString& modelPath, QObject* parent = nullptr);
+    explicit yolothread(QObject* parent = nullptr);
     ~yolothread() override;
 
     void stop();
@@ -20,6 +20,9 @@ public:
 
     // Function 2: run prediction for task id + image
     YoloTaskResult predict(quint64 taskId, const QImage& image);
+    const QString& modelPath =  "model.rknn";
+
+    bool yoloPredict(const QImage& inputImage);
 
 protected:
     void run() override;

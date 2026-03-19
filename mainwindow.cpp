@@ -73,11 +73,11 @@ MainWindow::MainWindow(QWidget *parent)
         threadPool = new QThread;
 
         // OSS线程
-        ossThread = new uploadpictoOSS(this);
+        ossThread = new uploadpictoOSS;
         ossThread->moveToThread(threadPool);
 
         // boardcontrol
-        boardControl* ctrl = new boardControl();
+        boardControl* ctrl = new boardControl;
         ctrl->moveToThread(threadPool);
         connect(threadPool, &QThread::started,
                 ctrl, &boardControl::initSerial);
@@ -95,13 +95,13 @@ MainWindow::MainWindow(QWidget *parent)
                 this, &MainWindow::onEncoderSpeed);
 
         // 保存本地文件线程
-        savelocalpicThread = new saveLocalpic(this);
+        savelocalpicThread = new saveLocalpic;
         savelocalpicThread->moveToThread(threadPool);
 
         // 摄像头线程
-        camThread = new camerathread(this);
-        connect(camThread, &camerathread::frameReadySig,
-                this, &MainWindow::updateFrame);
+        camThread = new camerathread;
+//        connect(camThread, &camerathread::frameReadySig,
+//                this, &MainWindow::updateFrame);
 //        connect(camThread, &camerathread::frameReadySig,
 //                savelocalpicThread, &saveLocalpic::savelocalpicture);
         connect(savelocalpicThread, &saveLocalpic::forOSSPathSig,
@@ -112,6 +112,23 @@ MainWindow::MainWindow(QWidget *parent)
             LOG_INFO("Camera thread started");
             camThread->start();
         }
+
+//        m_yolothread = new yolothread;
+//        m_yolothread->moveToThread(threadPool);
+//        connect(this, &MainWindow::yoloImg,
+//                m_yolothread, &yolothread::yoloPredict);
+
+        yolorecogThread = new yolorecognition;
+        yolorecogThread->moveToThread(threadPool);
+        connect(camThread, &camerathread::frameReadySig,
+                yolorecogThread, &yolorecognition::recognition);
+        connect(yolorecogThread, &yolorecognition::resultImgSig,
+                this, &MainWindow::updateFrame);
+
+        m_calDistance = new calDistance;
+        m_calDistance->moveToThread(threadPool);
+        connect(yolorecogThread, &yolorecognition::objPointSig,
+                m_calDistance,&calDistance::distance);
 
         m_running = true;
         m_thread = std::thread([this]()
@@ -625,7 +642,7 @@ void MainWindow::updateFrame(const QImage &img)
 {
     pixmapItem->setPixmap(QPixmap::fromImage(img));
     ui->cameraview->fitInView(pixmapItem, Qt::KeepAspectRatio);
-//    qDebug() << "Image size:" << img.width() << "x" << img.height();
+//    emit yoloImg(img);
 }
 
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
