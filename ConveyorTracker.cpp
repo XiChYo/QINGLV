@@ -8,7 +8,7 @@ ConveyorTracker::ConveyorTracker(QObject *parent)
     m_lastTime = m_timer.elapsed();
 }
 
-int ConveyorTracker::addTask(double distance)
+int ConveyorTracker::addTask(const std::vector<ValveCmd>& cmds, float distance)
 {
     QMutexLocker locker(&m_mutex);
     qDebug()<<"addTask: "<<distance;
@@ -20,7 +20,6 @@ int ConveyorTracker::addTask(double distance)
     task.finished = false;
 
     m_tasks.append(task);
-
     return task.id;
 }
 
@@ -56,7 +55,7 @@ void ConveyorTracker::updateSpeed(double speed)
             task.finished = true;
             qDebug()<<"taskFinished task.id: "<<task.id;
 
-            emit taskFinished();
+            emit taskFinished(task);
         }
     }
 

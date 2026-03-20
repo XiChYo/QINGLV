@@ -9,7 +9,7 @@ void calDistance::distance(const QPoint& corPoint)
 {
     if (corPoint.x() == -1 && corPoint.y() == -1) return;
     int picX = corPoint.x();
-    int picY = corPoint.y();
+    int picY = 2048 - corPoint.y();
 
     float percX = picX / picLength;
     float percY = picY / picWidth;
@@ -20,9 +20,6 @@ void calDistance::distance(const QPoint& corPoint)
     int index = getIndex(realPosX);
 
     const std::vector<ValveCmd>& results = generateCommands(index);
-
-//    int index1 = index - 1;
-//    int index3 = index + 1;
 
     emit s_point(results, realPosY);
 

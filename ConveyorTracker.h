@@ -5,6 +5,16 @@
 #include <QElapsedTimer>
 #include <QList>
 #include <QMutex>
+#include <valvecmd.h>
+
+struct Task
+{
+    int id;
+    float targetDistance;
+    float currentDistance;
+    std::vector<ValveCmd> cmds;
+    bool finished;
+};
 
 class ConveyorTracker : public QObject
 {
@@ -14,25 +24,18 @@ public:
     explicit ConveyorTracker(QObject *parent = nullptr);
 
     // 添加任务，返回任务ID
-    int addTask(double distance);
+    int addTask(const std::vector<ValveCmd>& cmds, float distance);
 
     // 更新输送带速度 m/min
     void updateSpeed(double speed);
 
 signals:
     // 当某个任务完成
-//    void taskFinished(int taskId);
-    void taskFinished();
+    void taskFinished(Task task);
 
 private:
 
-    struct Task
-    {
-        int id;
-        double targetDistance;
-        double currentDistance;
-        bool finished;
-    };
+
 
     QList<Task> m_tasks;
 

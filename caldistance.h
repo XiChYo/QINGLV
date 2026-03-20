@@ -5,11 +5,7 @@
 #include <map>
 #include <cmath>
 #include <QDebug>
-struct ValveCmd
-{
-    int valveId;   // 1~8
-    uint16_t mask; // 9bit
-};
+#include <valvecmd.h>
 
 class calDistance : public QObject
 {

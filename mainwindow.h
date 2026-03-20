@@ -13,13 +13,16 @@
 #include <QTranslator>
 #include <QLabel>
 #include "savelocalpic.h"
-#include "ConveyorTracker.h"
 #include <thread>
 #include <atomic>
 #include "yolorecognition.h"
 #include "yolothread.h"
 #include "caldistance.h"
+#include "ConveyorTracker.h"
+#include "valvecmd.h"
 
+//Q_DECLARE_METATYPE(ValveCmd)
+//Q_DECLARE_METATYPE(std::vector<ValveCmd>)
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -80,6 +83,8 @@ private slots:
 
     void on_chan9_clicked();
 
+    void doTask(Task task);
+
 private:
     Ui::MainWindow *ui;
     QList<QPushButton*> allButtons; // 保存所有在物料选择生成的按钮
@@ -107,9 +112,10 @@ private:
     yolothread* m_yolothread;
     calDistance* m_calDistance;
 
-    ConveyorTracker m_tracker;
+    ConveyorTracker* m_tracker;
 
     QThread* threadPool;
+    QThread* threadPool_yolo;
 
     QString logMsg;
     bool uploadOssSorF;

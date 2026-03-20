@@ -71,6 +71,7 @@ MainWindow::MainWindow(QWidget *parent)
 
         // 线程池
         threadPool = new QThread;
+        threadPool_yolo = new QThread;
 
         // OSS线程
         ossThread = new uploadpictoOSS;
@@ -113,37 +114,42 @@ MainWindow::MainWindow(QWidget *parent)
             camThread->start();
         }
 
-//        m_yolothread = new yolothread;
-//        m_yolothread->moveToThread(threadPool);
-//        connect(this, &MainWindow::yoloImg,
-//                m_yolothread, &yolothread::yoloPredict);
-
         yolorecogThread = new yolorecognition;
-        yolorecogThread->moveToThread(threadPool);
+        yolorecogThread->moveToThread(threadPool_yolo);
         connect(camThread, &camerathread::frameReadySig,
                 yolorecogThread, &yolorecognition::recognition);
         connect(yolorecogThread, &yolorecognition::resultImgSig,
                 this, &MainWindow::updateFrame);
 
         m_calDistance = new calDistance;
-        m_calDistance->moveToThread(threadPool);
+        m_calDistance->moveToThread(threadPool_yolo);
         connect(yolorecogThread, &yolorecognition::objPointSig,
                 m_calDistance,&calDistance::distance);
+
+
+        m_tracker = new ConveyorTracker;
+        connect(m_calDistance,&calDistance::s_point,
+                m_tracker, &ConveyorTracker::addTask);
+
+        connect(m_tracker, &ConveyorTracker::taskFinished,
+                this, &MainWindow::doTask);
+
 
         m_running = true;
         m_thread = std::thread([this]()
         {
                 while(m_running)
         {
-                m_tracker.updateSpeed(speed);
+                m_tracker->updateSpeed(speed);
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     });
-        connect(&m_tracker, &ConveyorTracker::taskFinished, this, &MainWindow::on_chan3_clicked);
+
 
 
         // 线程池中的线程启动
         threadPool->start();
+        threadPool_yolo->start();
     }catch(std::exception& e)
     {
         logMsg = "MainFuc: " + QString::fromStdString(e.what());
@@ -619,7 +625,7 @@ void MainWindow::on_run_clicked()
 void MainWindow::on_powerbutton_clicked()
 {
     savelocalpicThread -> testint = 1;
-    m_tracker.addTask(1.75);
+//    m_tracker.addTask(1.75);
 //    // 弹出询问框
 //    QMessageBox::StandardButton reply;
 //    reply = QMessageBox::question(this, "关机确认", "是否要关机？",
@@ -924,4 +930,33 @@ void MainWindow::on_chan8_clicked()
 void MainWindow::on_chan9_clicked()
 {
     emit batchControl("09 01 FF");
+}
+
+void MainWindow::doTask(Task task)
+{
+    qDebug() << "----------------------";
+    // 1️判空
+    if (task.cmds.empty())
+    {
+        qDebug() << "Task" << task.id << "no commands";
+        return;
+    }
+
+    // 2️遍历发送
+    for (const auto& cmd : task.cmds)
+    {
+        uint8_t valve = cmd.valveId;
+        uint8_t high  = (cmd.mask >> 8) & 0xFF;
+        uint8_t low   = cmd.mask & 0xFF;
+
+        QString cmdStr = QString("%1 %2 %3")
+                .arg(valve, 2, 16, QChar('0'))
+                .arg(high, 2, 16, QChar('0'))
+                .arg(low, 2, 16, QChar('0'))
+                .toUpper();
+
+        qDebug() << "Task" << task.id << "Send:" << cmdStr;
+
+        emit batchControl(cmdStr);   //发送
+    }
 }

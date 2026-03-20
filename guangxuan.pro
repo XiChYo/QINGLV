@@ -48,6 +48,7 @@ HEADERS += \
     savelocalpic.h \
     updatemanager.h \
     uploadpictooss.h \
+    valvecmd.h \
     yolorecognition.h \
     yoloresulttypes.h \
     yolothread.h

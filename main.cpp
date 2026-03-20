@@ -4,10 +4,14 @@
 #include <QTranslator>
 #include <QLocale>
 #include <QSettings>
+#include "valvecmd.h"
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+
+    qRegisterMetaType<ValveCmd>("ValveCmd");
+    qRegisterMetaType<std::vector<ValveCmd>>("std::vector<ValveCmd>");
 
     //读取 config.ini 中的语言设置
     QSettings settings("config.ini", QSettings::IniFormat);
