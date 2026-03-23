@@ -14,7 +14,8 @@
 #endif
 
 #if RKNN_DEBUG
-#define DBG_PRINT(...) printf("[DEBUG] " __VA_ARGS__)
+//#define DBG_PRINT(...) printf("[DEBUG] " __VA_ARGS__)
+#define DBG_PRINT(...)
 #else
 #define DBG_PRINT(...)
 #endif
@@ -94,7 +95,7 @@ static unsigned char* load_model(const char* filename, int* model_size) {
     unsigned char* data;
     fp = fopen(filename, "rb");
     if (NULL == fp) {
-        printf("Open file %s failed.\n", filename);
+//        printf("Open file %s failed.\n", filename);
         return NULL;
     }
     fseek(fp, 0, SEEK_END);
@@ -129,7 +130,7 @@ static void release_session(RknnModelSession& s) {
 
 static bool init_model_session(const char* model_path, RknnModelSession& session) {
     // 初始化函数：负责模型加载 + RKNN 上下文初始化 + IO 属性查询。
-    printf("Loading model %s...\n", model_path);
+//    printf("Loading model %s...\n", model_path);
     session.model_data = load_model(model_path, &session.model_data_size);
     if (!session.model_data) {
         return false;
@@ -137,7 +138,7 @@ static bool init_model_session(const char* model_path, RknnModelSession& session
 
     int ret = rknn_init(&session.ctx, session.model_data, session.model_data_size, 0, NULL);
     if (ret < 0) {
-        printf("rknn_init fail! ret=%d\n", ret);
+//        printf("rknn_init fail! ret=%d\n", ret);
         return false;
     }
 
@@ -145,28 +146,28 @@ static bool init_model_session(const char* model_path, RknnModelSession& session
     memset(&sdk_ver, 0, sizeof(sdk_ver));
     ret = rknn_query(session.ctx, RKNN_QUERY_SDK_VERSION, &sdk_ver, sizeof(sdk_ver));
     if (ret == 0) {
-        printf("RKNN API version: %s\n", sdk_ver.api_version);
-        printf("RKNN Driver version: %s\n", sdk_ver.drv_version);
+//        printf("RKNN API version: %s\n", sdk_ver.api_version);
+//        printf("RKNN Driver version: %s\n", sdk_ver.drv_version);
     } else {
-        printf("rknn_query RKNN_QUERY_SDK_VERSION failed: ret=%d\n", ret);
+//        printf("rknn_query RKNN_QUERY_SDK_VERSION failed: ret=%d\n", ret);
     }
 
     ret = rknn_set_core_mask(session.ctx, RKNN_NPU_CORE_0);
     if (ret < 0) {
-        printf("rknn_set_core_mask(RKNN_NPU_CORE_0) failed: ret=%d (continue)\n", ret);
+//        printf("rknn_set_core_mask(RKNN_NPU_CORE_0) failed: ret=%d (continue)\n", ret);
     } else {
         DBG_PRINT("set core mask to RKNN_NPU_CORE_0\n");
     }
 
     ret = rknn_query(session.ctx, RKNN_QUERY_IN_OUT_NUM, &session.io_num, sizeof(session.io_num));
     if (ret < 0) {
-        printf("rknn_query RKNN_QUERY_IN_OUT_NUM fail! ret=%d\n", ret);
+//        printf("rknn_query RKNN_QUERY_IN_OUT_NUM fail! ret=%d\n", ret);
         return false;
     }
-    printf("Model Input Num: %d, Output Num: %d\n", session.io_num.n_input, session.io_num.n_output);
+//    printf("Model Input Num: %d, Output Num: %d\n", session.io_num.n_input, session.io_num.n_output);
     if (session.io_num.n_input < 1 || session.io_num.n_output < 2) {
-        printf("Unexpected model io count: n_input=%d n_output=%d. YOLO-seg expects >=1 input and >=2 outputs.\n",
-               session.io_num.n_input, session.io_num.n_output);
+//        printf("Unexpected model io count: n_input=%d n_output=%d. YOLO-seg expects >=1 input and >=2 outputs.\n",
+//               session.io_num.n_input, session.io_num.n_output);
         return false;
     }
 
@@ -179,7 +180,7 @@ static bool init_model_session(const char* model_path, RknnModelSession& session
         in_attr.index = i;
         ret = rknn_query(session.ctx, RKNN_QUERY_INPUT_ATTR, &in_attr, sizeof(in_attr));
         if (ret < 0) {
-            printf("rknn_query RKNN_QUERY_INPUT_ATTR(%d) fail! ret=%d\n", i, ret);
+//            printf("rknn_query RKNN_QUERY_INPUT_ATTR(%d) fail! ret=%d\n", i, ret);
             return false;
         }
         dump_tensor_attr("INPUT", in_attr);
@@ -194,7 +195,7 @@ static bool init_model_session(const char* model_path, RknnModelSession& session
         out_attr.index = i;
         ret = rknn_query(session.ctx, RKNN_QUERY_OUTPUT_ATTR, &out_attr, sizeof(out_attr));
         if (ret < 0) {
-            printf("rknn_query RKNN_QUERY_OUTPUT_ATTR(%d) fail! ret=%d\n", i, ret);
+//            printf("rknn_query RKNN_QUERY_OUTPUT_ATTR(%d) fail! ret=%d\n", i, ret);
             return false;
         }
         dump_tensor_attr("OUTPUT", out_attr);
@@ -210,7 +211,7 @@ QPoint run_seg_predict(const RknnModelSession& session,
     // 预测函数：负责预处理、推理、后处理（det/proto 解码 + 分割绘制）。
     result_img = orig_img.clone();
     if (result_img.empty()) {
-        printf("Input image is empty.\n");
+//        printf("Input image is empty.\n");
         return QPoint(-1,-1);
     }
 
@@ -301,14 +302,14 @@ QPoint run_seg_predict(const RknnModelSession& session,
 
     int ret = rknn_inputs_set(session.ctx, session.io_num.n_input, inputs);
     if (ret < 0) {
-        printf("rknn_inputs_set fail! ret=%d\n", ret);
+//        printf("rknn_inputs_set fail! ret=%d\n", ret);
         return QPoint(-1,-1);
     }
 
-    printf("Running inference...\n");
+//    printf("Running inference...\n");
     ret = rknn_run(session.ctx, NULL);
     if (ret < 0) {
-        printf("rknn_run fail! ret=%d\n", ret);
+//        printf("rknn_run fail! ret=%d\n", ret);
         return QPoint(-1,-1);
     }
 
@@ -319,7 +320,7 @@ QPoint run_seg_predict(const RknnModelSession& session,
     }
     ret = rknn_outputs_get(session.ctx, session.io_num.n_output, outputs.data(), NULL);
     if (ret < 0) {
-        printf("rknn_outputs_get fail! ret=%d\n", ret);
+//        printf("rknn_outputs_get fail! ret=%d\n", ret);
         return QPoint(-1,-1);
     }
 
@@ -334,7 +335,7 @@ QPoint run_seg_predict(const RknnModelSession& session,
         }
     }
     if (det_idx < 0 || proto_idx < 0 || outputs[det_idx].buf == NULL || outputs[proto_idx].buf == NULL) {
-        printf("Cannot identify valid det/proto output.\n");
+//        printf("Cannot identify valid det/proto output.\n");
         rknn_outputs_release(session.ctx, session.io_num.n_output, outputs.data());
         return QPoint(-1,-1);
     }
@@ -400,6 +401,10 @@ QPoint run_seg_predict(const RknnModelSession& session,
                  << "mask size:"
                  << obj.mask.cols << "x" << obj.mask.rows
                  << "empty:" << obj.mask.empty();
+        if (obj.mask.cols > 2000 || obj.mask.rows > 1700)
+        {
+            return QPoint(-1,-1);
+        }
     }
 
     if (!results.empty())
@@ -462,7 +467,7 @@ int yolorecognition::recognition(const QImage& image) {
 
     cv::Mat orig_img = QImage2Mat(image);
     if (orig_img.empty()) {
-        printf("Read image failed!\n");
+//        printf("Read image failed!\n");
         release_session(session);
         return -1;
     }

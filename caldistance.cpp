@@ -15,7 +15,7 @@ void calDistance::distance(const QPoint& corPoint)
     float percY = picY / picWidth;
 
     float realPosX = realLength * percX;
-    float realPosY = realWidth * percY + endToSpray;
+    float realPosY = realWidth * percY + endToSpray - 0.25;
 
     int index = getIndex(realPosX);
 
@@ -47,7 +47,7 @@ std::vector<ValveCmd> calDistance::generateCommands(int index)
 {
     std::map<int, uint16_t> valveMap;  // valveId -> mask
 
-    std::vector<int> indices = {index - 1, index, index + 1};
+    std::vector<int> indices = {index - 4, index - 3, index - 2, index - 1, index, index + 1, index + 2, index + 3, index + 4};
 
     for (int idx : indices)
     {
@@ -81,7 +81,7 @@ std::vector<ValveCmd> calDistance::generateCommands(int index)
                 .arg(low, 2, 16, QChar('0'))
                 .toUpper();
 
-        qDebug() << "Send:" << msg;
+        qDebug() << "cmd : result Send:" << msg;
     }
 
     return result;

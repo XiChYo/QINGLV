@@ -18,6 +18,7 @@ int ConveyorTracker::addTask(const std::vector<ValveCmd>& cmds, float distance)
     task.targetDistance = distance;
     task.currentDistance = 0.0;
     task.finished = false;
+    task.cmds = cmds;
 
     m_tasks.append(task);
     return task.id;
@@ -53,7 +54,24 @@ void ConveyorTracker::updateSpeed(double speed)
         if (task.currentDistance >= task.targetDistance)
         {
             task.finished = true;
-            qDebug()<<"taskFinished task.id: "<<task.id;
+
+            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
+            for (const auto& cmd : task.cmds)
+            {
+                uint8_t valve = cmd.valveId;
+                uint8_t high  = (cmd.mask >> 8) & 0xFF;
+                uint8_t low   = cmd.mask & 0xFF;
+
+                QString cmdStr = QString("%1 %2 %3")
+                        .arg(valve, 2, 16, QChar('0'))
+                        .arg(high, 2, 16, QChar('0'))
+                        .arg(low, 2, 16, QChar('0'))
+                        .toUpper();
+
+                qDebug() << "taskFinishedtaskFinishedtaskFinishedTask" << task.id << "Send:" << cmdStr;
+
+            }
+            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
 
             emit taskFinished(task);
         }

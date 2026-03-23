@@ -12,6 +12,7 @@ int main(int argc, char *argv[])
 
     qRegisterMetaType<ValveCmd>("ValveCmd");
     qRegisterMetaType<std::vector<ValveCmd>>("std::vector<ValveCmd>");
+    qRegisterMetaType<Task>("Task");
 
     //读取 config.ini 中的语言设置
     QSettings settings("config.ini", QSettings::IniFormat);

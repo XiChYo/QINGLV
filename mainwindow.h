@@ -21,9 +21,6 @@
 #include "ConveyorTracker.h"
 #include "valvecmd.h"
 
-//Q_DECLARE_METATYPE(ValveCmd)
-//Q_DECLARE_METATYPE(std::vector<ValveCmd>)
-
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -109,7 +106,7 @@ private:
     uploadpictoOSS* ossThread;
     saveLocalpic* savelocalpicThread;
     yolorecognition* yolorecogThread;
-    yolothread* m_yolothread;
+//    yolothread* m_yolothread;
     calDistance* m_calDistance;
 
     ConveyorTracker* m_tracker;

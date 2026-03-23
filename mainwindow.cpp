@@ -882,29 +882,40 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
          static_cast<quint8>(frame[7]);
     speed = rotation * 0.502;
     QString speed_text = QString::number(int(speed)) + "m/min";
+
+
+    if (speed < 1)
+    {
+        camThread->captureIntervalMs = 500;  // ms
+    }else {
+        camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000;  // ms
+    }
+
+    qDebug()<< "camThread->captureIntervalMs"<<camThread->captureIntervalMs;
+
     ui->speed->setText(speed_text);
 }
 
 void MainWindow::on_chan1_clicked()
 {
 //    qDebug()<<"on_chan1_clicked";
-    emit singleControl("02 01 01");
+    emit singleControl("04 00 0E");
 }
 
 void MainWindow::on_chan2_clicked()
 {
 //    emit batchControl("02 01 FF");
-    emit batchControl("02 00 00");
+    emit batchControl("03 01 00");
 }
 
 void MainWindow::on_chan3_clicked()
 {
-    emit batchControl("03 01 FF");
+    emit batchControl("04 00 03");
 }
 
 void MainWindow::on_chan4_clicked()
 {
-    emit batchControl("04 01 FF");
+    emit batchControl("04 00 1C");
 }
 
 void MainWindow::on_chan5_clicked()

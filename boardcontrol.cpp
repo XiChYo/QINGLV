@@ -273,7 +273,7 @@ QByteArray boardControl::buildControlFrame(const QByteArray& field)
     frame.append(char(0x55));
     frame.append(char(0xAA));
 
-    qDebug() << "send:" << frame.toHex(' ').toUpper();
+//    qDebug() << "send:" << frame.toHex(' ').toUpper();
 
     return frame;
 }

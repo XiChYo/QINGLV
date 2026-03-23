@@ -14,7 +14,8 @@
 #endif
 
 #if RKNN_DEBUG
-#define DBG_PRINT(...) printf("[DEBUG][post] " __VA_ARGS__)
+//#define DBG_PRINT(...) printf("[DEBUG][post] " __VA_ARGS__)
+#define DBG_PRINT(...)
 #else
 #define DBG_PRINT(...)
 #endif
