@@ -235,18 +235,14 @@ static bool init_model_session(const char* model_path, RknnModelSession& session
         printf("rknn_query RKNN_QUERY_SDK_VERSION failed: ret=%d\n", ret);
     }
 
-    // 默认使用自动核心调度，通常比固定单核更快。
-    ret = rknn_set_core_mask(session.ctx, RKNN_NPU_CORE_AUTO);
+    // 固定单核有利于同图重复推理结果一致；RKNN_NPU_CORE_AUTO 在部分机型上偶发细微数值差，边界类会 A/B 抖动。
+    ret = rknn_set_core_mask(session.ctx, RKNN_NPU_CORE_0);
     if (ret < 0) {
-        printf("rknn_set_core_mask(RKNN_NPU_CORE_AUTO) failed: ret=%d, fallback CORE_0\n", ret);
-        ret = rknn_set_core_mask(session.ctx, RKNN_NPU_CORE_0);
+        printf("rknn_set_core_mask(RKNN_NPU_CORE_0) failed: ret=%d, try AUTO\n", ret);
+        ret = rknn_set_core_mask(session.ctx, RKNN_NPU_CORE_AUTO);
         if (ret < 0) {
-            printf("rknn_set_core_mask(RKNN_NPU_CORE_0) failed: ret=%d (continue)\n", ret);
-        } else {
-            DBG_PRINT("fallback core mask to RKNN_NPU_CORE_0\n");
+            printf("rknn_set_core_mask(RKNN_NPU_CORE_AUTO) failed: ret=%d (continue)\n", ret);
         }
-    } else {
-        DBG_PRINT("set core mask to RKNN_NPU_CORE_AUTO\n");
     }
 
     ret = rknn_query(session.ctx, RKNN_QUERY_IN_OUT_NUM, &session.io_num, sizeof(session.io_num));
@@ -597,37 +593,33 @@ static QPoint run_seg_predict(const RknnModelSession& session,
 
     if (draw_overlay) {
         draw_results(result_img, filtered_results);
-            for (const auto& obj : filtered_results)
-            {
-                qDebug() << "label:" << obj.label
-                         << "prob:" << obj.prob
-                         << "box:"
-                         << obj.box.x
-                         << obj.box.y
-                         << obj.box.width
-                         << obj.box.height
-                         << "mask size:"
-                         << obj.mask.cols << "x" << obj.mask.rows
-                         << "empty:" << obj.mask.empty();
-                if (obj.mask.cols > 2000 || obj.mask.rows > 1700)
-                {
-                    return QPoint(-1,-1);
-                }
+        for (const auto& obj : filtered_results) {
+            qDebug() << "label:" << obj.label
+                     << "prob:" << obj.prob
+                     << "box:"
+                     << obj.box.x
+                     << obj.box.y
+                     << obj.box.width
+                     << obj.box.height
+                     << "mask size:"
+                     << obj.mask.cols << "x" << obj.mask.rows
+                     << "empty:" << obj.mask.empty();
+            if (obj.mask.cols > 2000 || obj.mask.rows > 1700) {
+                return QPoint(-1, -1);
             }
-
-            if (!filtered_results.empty())
-            {
-                const auto& obj = filtered_results.front();
-
-                x = obj.box.x + obj.box.width / 2;
-                y = obj.box.y + obj.box.height / 2;
-
-                qDebug() << "center:" << x << y;
-
-            }
+        }
     }
 
-    return QPoint(x,y);
+    if (!filtered_results.empty()) {
+        const auto& obj = filtered_results.front();
+        x = obj.box.x + obj.box.width / 2;
+        y = obj.box.y + obj.box.height / 2;
+        if (draw_overlay) {
+            qDebug() << "center:" << x << y;
+        }
+    }
+
+    return QPoint(x, y);
 }
 yolorecognition::yolorecognition(QObject* parent):QObject(parent)
 {
@@ -701,26 +693,27 @@ int yolorecognition::recognition(const QImage& image) {
 }
 cv::Mat yolorecognition::QImage2Mat(const QImage& image)
 {
-    if (image.format() == QImage::Format_RGB888)
-    {
-        cv::Mat mat(image.height(),
-                    image.width(),
-                    CV_8UC3,
-                    const_cast<uchar*>(image.bits()),
-                    image.bytesPerLine());
-
-        return mat.clone();  // 深拷贝，线程安全
+    cv::Mat mat;
+    if (image.format() == QImage::Format_RGB888) {
+        mat = cv::Mat(image.height(),
+                      image.width(),
+                      CV_8UC3,
+                      const_cast<uchar*>(image.bits()),
+                      image.bytesPerLine())
+                  .clone();
+    } else {
+        QImage converted = image.convertToFormat(QImage::Format_RGB888);
+        mat = cv::Mat(converted.height(),
+                      converted.width(),
+                      CV_8UC3,
+                      const_cast<uchar*>(converted.bits()),
+                      converted.bytesPerLine())
+                  .clone();
     }
-
-    QImage converted = image.convertToFormat(QImage::Format_RGB888);
-
-    cv::Mat mat(converted.height(),
-                converted.width(),
-                CV_8UC3,
-                const_cast<uchar*>(converted.bits()),
-                converted.bytesPerLine());
-
-    return mat.clone();
+    // QImage 为 RGB；run_seg_predict 里 letterbox 后使用 COLOR_BGR2RGB（与 cv::imread 的 BGR 一致）。
+    // 若不先转成 BGR，会把 RGB 误当 BGR 再转一次，通道错乱，分数在类别边界上会抖动。
+    cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
+    return mat;
 }
 
 QImage yolorecognition::matToQImage(const cv::Mat& mat)
