@@ -13,7 +13,7 @@ class yolorecognition : public QObject
 public:
     explicit yolorecognition(QObject* parent = nullptr);
     cv::Mat QImage2Mat(const QImage& image);
-    char* model = "model.rknn";
+    char* model_path = "model-n-800-hsv-scaled.rknn";
     QPoint m_point;
     QImage matToQImage(const cv::Mat& mat);
 public slots:

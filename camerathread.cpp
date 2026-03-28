@@ -139,6 +139,13 @@ void camerathread::run()
                     .arg(QDateTime::currentDateTime()
                          .toString("yyyyMMdd_hhmmss_zzz"));
 
+
+//                QImage image;
+//                QString baseDir = QCoreApplication::applicationDirPath();
+
+//                QString saveDirPath = baseDir + "/saveRawPic/img_20260327_172735_817.jpg";
+
+//                bool ok = image.load(saveDirPath);
                 // 必须 copy，防止内存复用
                 emit frameReadySig(img, fileName);
 

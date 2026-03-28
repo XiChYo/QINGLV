@@ -30,7 +30,9 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     postprocess.cpp \
+    robotcontrol.cpp \
     savelocalpic.cpp \
+    tcpforrobot.cpp \
     updatemanager.cpp \
     uploadpictooss.cpp \
     yolorecognition.cpp \
@@ -45,7 +47,9 @@ HEADERS += \
     mainwindow.h \
     library/mvs/includes/MvCameraControl.h \
     postprocess.h \
+    robotcontrol.h \
     savelocalpic.h \
+    tcpforrobot.h \
     updatemanager.h \
     uploadpictooss.h \
     valvecmd.h \
@@ -85,4 +89,8 @@ unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/ -lrknnrt
 INCLUDEPATH += $$PWD/../../../../../usr/include
 DEPENDPATH += $$PWD/../../../../../usr/include
 
-#INCLUDEPATH += /usr/include/c++/9
+
+unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/ -lHR_Pro
+
+INCLUDEPATH += $$PWD/../../../../../usr/include
+DEPENDPATH += $$PWD/../../../../../usr/include

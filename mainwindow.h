@@ -20,6 +20,8 @@
 #include "caldistance.h"
 #include "ConveyorTracker.h"
 #include "valvecmd.h"
+#include "robotcontrol.h"
+#include "tcpforrobot.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -66,7 +68,7 @@ private slots:
 
     void on_chan2_clicked();
 
-    void on_chan3_clicked();
+//    void on_chan3_clicked();
 
     void on_chan4_clicked();
 
@@ -81,6 +83,7 @@ private slots:
     void on_chan9_clicked();
 
     void doTask(Task task);
+
 
 private:
     Ui::MainWindow *ui;
@@ -111,8 +114,13 @@ private:
 
     ConveyorTracker* m_tracker;
 
+    robotControl* m_robot;
+
+    tcpforrobot *m_tcpserver;
+
     QThread* threadPool;
     QThread* threadPool_yolo;
+    QThread* threadPool_robot;
 
     QString logMsg;
     bool uploadOssSorF;
@@ -138,6 +146,10 @@ signals:
     void batchControl(QString order);
     void requestEncoder();
     void yoloImg(const QImage& image);
+
+    void testinitRobot();
+    void testMoveRobot();
+    void tcpPosSig(QByteArray data);
 
 };
 #endif // MAINWINDOW_H

@@ -20,6 +20,7 @@
 #include "boardcontrol.h"
 
 
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -72,6 +73,7 @@ MainWindow::MainWindow(QWidget *parent)
         // 线程池
         threadPool = new QThread;
         threadPool_yolo = new QThread;
+        threadPool_robot = new QThread;
 
         // OSS线程
         ossThread = new uploadpictoOSS;
@@ -101,10 +103,8 @@ MainWindow::MainWindow(QWidget *parent)
 
         // 摄像头线程
         camThread = new camerathread;
-//        connect(camThread, &camerathread::frameReadySig,
-//                this, &MainWindow::updateFrame);
-//        connect(camThread, &camerathread::frameReadySig,
-//                savelocalpicThread, &saveLocalpic::savelocalpicture);
+        connect(camThread, &camerathread::frameReadySig,
+                savelocalpicThread, &saveLocalpic::savelocalpicture);
         connect(savelocalpicThread, &saveLocalpic::forOSSPathSig,
                 this, &MainWindow::uploadOSSPath);
         connect(camThread, &camerathread::errorMegSig,
@@ -134,6 +134,20 @@ MainWindow::MainWindow(QWidget *parent)
         connect(m_tracker, &ConveyorTracker::taskFinished,
                 this, &MainWindow::doTask);
 
+        m_robot = new robotControl;
+        m_robot->moveToThread(threadPool_robot);
+        connect(this, &MainWindow::testinitRobot,
+                m_robot, &robotControl::initRobot);
+        connect(this, &MainWindow::testMoveRobot,
+                m_robot, &robotControl::testRobotControl);
+
+        m_tcpserver = new tcpforrobot;
+        m_tcpserver->moveToThread(threadPool_robot);
+        connect(ui->chan3, &QPushButton::clicked,
+                m_tcpserver, &tcpforrobot::startServer);
+        connect(this, &MainWindow::tcpPosSig,
+                m_tcpserver, &tcpforrobot::sendData);
+
 
         m_running = true;
         m_thread = std::thread([this]()
@@ -150,6 +164,7 @@ MainWindow::MainWindow(QWidget *parent)
         // 线程池中的线程启动
         threadPool->start();
         threadPool_yolo->start();
+        threadPool_robot->start();
     }catch(std::exception& e)
     {
         logMsg = "MainFuc: " + QString::fromStdString(e.what());
@@ -888,34 +903,32 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
     {
         camThread->captureIntervalMs = 500;  // ms
     }else {
-        camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000;  // ms
+        camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000 / 3;  // ms
     }
 
-    qDebug()<< "camThread->captureIntervalMs"<<camThread->captureIntervalMs;
+//    qDebug()<< "camThread->captureIntervalMs"<<camThread->captureIntervalMs;
 
     ui->speed->setText(speed_text);
 }
 
 void MainWindow::on_chan1_clicked()
 {
-//    qDebug()<<"on_chan1_clicked";
-    emit singleControl("04 00 0E");
+    emit testinitRobot();
 }
 
 void MainWindow::on_chan2_clicked()
 {
-//    emit batchControl("02 01 FF");
-    emit batchControl("03 01 00");
+    emit testMoveRobot();
 }
 
-void MainWindow::on_chan3_clicked()
-{
-    emit batchControl("04 00 03");
-}
+//void MainWindow::on_chan3_clicked()
+//{
+//    emit batchControl("04 00 03");
+//}
 
 void MainWindow::on_chan4_clicked()
 {
-    emit batchControl("04 00 1C");
+    emit tcpPosSig("10,0");
 }
 
 void MainWindow::on_chan5_clicked()

@@ -43,7 +43,7 @@ bool boardControl::openSerial()
     }
     break;
     }
-    qDebug()<<"open serial succeed";
+//    qDebug()<<"open serial succeed";
 
     termios tty{};
     tcgetattr(m_fd, &tty);
@@ -183,7 +183,7 @@ void boardControl::initSerial()
         qDebug()<<"openSerial failed";
         return;
     }
-    qDebug()<<"openSerial succeed";
+//    qDebug()<<"openSerial succeed";
 
     m_speedTimer = new QTimer(this);
     connect(m_speedTimer, &QTimer::timeout,

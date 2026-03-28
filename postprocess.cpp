@@ -4,10 +4,13 @@
 #include <cmath>
 #include <stdio.h>
 #include <vector>
+#include <chrono>
 
-#define NMS_THRESH 0.45
-#define CONF_THRESH 0.25
-#define MASK_PROTO_DIM 32
+#define NMS_THRESH 0.25
+#define CONF_THRESH 0.60
+// 限制每个类别进入 NMS 的候选数量，避免极端场景 CPU 后处理爆炸。
+// 典型目标量 50-100/图时，这个值可适当放宽。
+static constexpr int PRE_NMS_TOPK_PER_CLASS = 300;
 
 #ifndef RKNN_DEBUG
 #define RKNN_DEBUG 1
@@ -35,6 +38,13 @@ void post_process_seg(const float* det_data, int det_count, int det_len,
                       int pad_w, int pad_h, float scale,
                       std::vector<SegObject>& results)
 {
+    const auto t_all_start = std::chrono::steady_clock::now();
+    double t_proto_mat_ms = 0.0;
+    double t_candidate_scan_ms = 0.0;
+    double t_nms_prepare_ms = 0.0;
+    double t_nms_ms = 0.0;
+    double t_mask_ms = 0.0;
+
     if (det_data == nullptr || proto_data == nullptr) {
         printf("post_process_seg got null pointer: det_data=%p proto_data=%p\n", det_data, proto_data);
         return;
@@ -44,8 +54,9 @@ void post_process_seg(const float* det_data, int det_count, int det_len,
                det_count, det_len, proto_c, proto_h, proto_w);
         return;
     }
-    if (proto_c != MASK_PROTO_DIM) {
-        printf("post_process_seg proto_c=%d unsupported, expected %d\n", proto_c, MASK_PROTO_DIM);
+    const int mask_proto_dim = proto_c;
+    if (mask_proto_dim <= 0) {
+        printf("post_process_seg invalid proto_c=%d\n", proto_c);
         return;
     }
 
@@ -54,17 +65,18 @@ void post_process_seg(const float* det_data, int det_count, int det_len,
     DBG_PRINT("det_count=%d det_len=%d classes=%d proto=(c=%d,h=%d,w=%d,%s)\n",
               det_count, det_len, num_classes, proto_c, proto_h, proto_w, proto_nchw ? "NCHW" : "NHWC");
 
-    // Layout A (common RKNN NMS output): [cx, cy, w, h, score, class_id, 32 coeff] => 38
-    // Layout B (raw cls scores): [cx, cy, w, h, cls..., 32 coeff]
-    const bool topk_layout = (det_len == (4 + 1 + 1 + MASK_PROTO_DIM));
+    // 布局A（常见RKNN top-k输出）：[cx, cy, w, h, score, class_id, mask_coeff...]
+    // 布局B（常规分类分数输出）：[cx, cy, w, h, cls..., mask_coeff...]
+    const bool topk_layout = (det_len == (4 + 1 + 1 + mask_proto_dim));
     const int coeff_offset = topk_layout ? 6 : (4 + num_classes);
-    if (coeff_offset + MASK_PROTO_DIM > det_len) {
+    if (coeff_offset + mask_proto_dim > det_len) {
         printf("post_process_seg unsupported det_len=%d (coeff overflow)\n", det_len);
         return;
     }
 
-    cv::Mat proto_mat(MASK_PROTO_DIM, proto_h * proto_w, CV_32F);
-    for (int c = 0; c < MASK_PROTO_DIM; c++) {
+    const auto t_proto_start = std::chrono::steady_clock::now();
+    cv::Mat proto_mat(mask_proto_dim, proto_h * proto_w, CV_32F);
+    for (int c = 0; c < mask_proto_dim; c++) {
         float* dst = proto_mat.ptr<float>(c);
         for (int y = 0; y < proto_h; y++) {
             for (int x = 0; x < proto_w; x++) {
@@ -72,15 +84,31 @@ void post_process_seg(const float* det_data, int det_count, int det_len,
                     const int idx = (c * proto_h + y) * proto_w + x;
                     dst[y * proto_w + x] = proto_data[idx];
                 } else {
-                    const int idx = (y * proto_w + x) * MASK_PROTO_DIM + c;
+                    const int idx = (y * proto_w + x) * mask_proto_dim + c;
                     dst[y * proto_w + x] = proto_data[idx];
                 }
             }
         }
     }
+    const auto t_proto_end = std::chrono::steady_clock::now();
+    t_proto_mat_ms = std::chrono::duration<double, std::milli>(t_proto_end - t_proto_start).count();
 
-    std::vector<SegObject> proposals;
+    // 方案1：先做候选框解析 + NMS（轻量），再只对保留目标计算 mask（重）
+    struct Candidate {
+        cv::Rect box;               // 原图坐标系 box
+        int label = -1;
+        float prob = 0.0f;
+        // 模型输入坐标系 box，用于 mask 裁剪（在 model_w/model_h 上裁剪）
+        float cx_m = 0.0f;
+        float cy_m = 0.0f;
+        float w_m = 0.0f;
+        float h_m = 0.0f;
+        std::vector<float> coeffs;  // mask 系数（长度=proto_c）
+    };
+    std::vector<Candidate> candidates;
+    candidates.reserve(256);
 
+    const auto t_scan_start = std::chrono::steady_clock::now();
     for (int i = 0; i < det_count; i++) {
         const float* row = det_data + i * det_len;
 
@@ -113,7 +141,7 @@ void post_process_seg(const float* det_data, int det_count, int det_len,
                 continue;
             }
 
-            // Handle normalized output boxes.
+            // 兼容归一化坐标输出（0~1）和像素坐标输出两种形式。
             if (cx <= 1.5f && cy <= 1.5f && w <= 1.5f && h <= 1.5f) {
                 cx *= model_w;
                 cy *= model_h;
@@ -121,7 +149,7 @@ void post_process_seg(const float* det_data, int det_count, int det_len,
                 h *= model_h;
             }
 
-            // Convert to original image coords.
+            // 将模型输入坐标映射回原图坐标（反向去除 letterbox）。
             float x1 = (cx - w/2 - pad_w) / scale;
             float y1 = (cy - h/2 - pad_h) / scale;
             float w_orig = w / scale;
@@ -130,67 +158,123 @@ void post_process_seg(const float* det_data, int det_count, int det_len,
                 continue;
             }
 
-            SegObject obj;
-            obj.box = cv::Rect(x1, y1, w_orig, h_orig);
-            obj.box.x = std::max(0, std::min(obj.box.x, orig_w - 1));
-            obj.box.y = std::max(0, std::min(obj.box.y, orig_h - 1));
-            obj.box.width = std::max(1, std::min(obj.box.width, orig_w - obj.box.x));
-            obj.box.height = std::max(1, std::min(obj.box.height, orig_h - obj.box.y));
-            obj.label = class_id;
-            obj.prob = max_score;
-
-            cv::Mat coeffs(1, MASK_PROTO_DIM, CV_32F);
-            for (int m = 0; m < MASK_PROTO_DIM; m++) {
-                coeffs.at<float>(0, m) = row[coeff_offset + m];
+            Candidate cand;
+            cand.box = cv::Rect(x1, y1, w_orig, h_orig);
+            cand.box.x = std::max(0, std::min(cand.box.x, orig_w - 1));
+            cand.box.y = std::max(0, std::min(cand.box.y, orig_h - 1));
+            cand.box.width = std::max(1, std::min(cand.box.width, orig_w - cand.box.x));
+            cand.box.height = std::max(1, std::min(cand.box.height, orig_h - cand.box.y));
+            cand.label = class_id;
+            cand.prob = max_score;
+            cand.cx_m = cx;
+            cand.cy_m = cy;
+            cand.w_m = w;
+            cand.h_m = h;
+            cand.coeffs.resize(mask_proto_dim);
+            for (int m = 0; m < mask_proto_dim; ++m) {
+                cand.coeffs[m] = row[coeff_offset + m];
             }
-
-            cv::Mat mask_flat = coeffs * proto_mat;
-            cv::exp(-mask_flat, mask_flat);
-            mask_flat = 1.0 / (1.0 + mask_flat);
-
-            cv::Mat mask_raw = mask_flat.reshape(1, proto_h);
-            cv::Mat mask_upscaled;
-            cv::resize(mask_raw, mask_upscaled, cv::Size(model_w, model_h));
-
-            int bx1 = std::max(0, (int)(cx - w/2));
-            int by1 = std::max(0, (int)(cy - h/2));
-            int bx2 = std::min(model_w, (int)(cx + w/2));
-            int by2 = std::min(model_h, (int)(cy + h/2));
-
-            if (bx2 > bx1 && by2 > by1) {
-                cv::Mat mask_cropped = mask_upscaled(cv::Rect(bx1, by1, bx2-bx1, by2-by1));
-
-                cv::Mat mask_bin;
-                cv::threshold(mask_cropped, mask_bin, 0.5, 1, cv::THRESH_BINARY);
-                mask_bin.convertTo(mask_bin, CV_8U);
-
-                cv::resize(mask_bin, obj.mask, obj.box.size(), 0, 0, cv::INTER_NEAREST);
-
-                proposals.push_back(obj);
-            }
+            candidates.push_back(std::move(cand));
         }
     }
 
-    DBG_PRINT("proposals=%zu before nms\n", proposals.size());
+    const auto t_scan_end = std::chrono::steady_clock::now();
+    t_candidate_scan_ms = std::chrono::duration<double, std::milli>(t_scan_end - t_scan_start).count();
 
-    // NMS
-    std::sort(proposals.begin(), proposals.end(), [](const SegObject& a, const SegObject& b) {
-        return a.prob > b.prob;
-    });
+    DBG_PRINT("candidates=%zu before nms\n", candidates.size());
 
-    std::vector<bool> suppressed(proposals.size(), false);
-    for (size_t i = 0; i < proposals.size(); i++) {
-        if (suppressed[i]) continue;
-        results.push_back(proposals[i]);
+    // NMS（按类别分组，先 topK 再 NMS；只用 box/prob，不算 mask）
+    const auto t_prepare_start = std::chrono::steady_clock::now();
+    std::vector<std::vector<int>> class_to_indices(std::max(1, num_classes));
+    for (int i = 0; i < (int)candidates.size(); ++i) {
+        const int cid = candidates[i].label;
+        if (cid >= 0 && cid < num_classes) {
+            class_to_indices[cid].push_back(i);
+        }
+    }
+    const auto t_prepare_end = std::chrono::steady_clock::now();
+    t_nms_prepare_ms = std::chrono::duration<double, std::milli>(t_prepare_end - t_prepare_start).count();
 
-        for (size_t j = i + 1; j < proposals.size(); j++) {
-            if (suppressed[j]) continue;
-            if (iou(proposals[i].box, proposals[j].box) > NMS_THRESH) {
-                suppressed[j] = true;
+    const auto t_nms_start = std::chrono::steady_clock::now();
+    std::vector<int> keep_indices;
+    keep_indices.reserve(256);
+    for (int c = 0; c < num_classes; ++c) {
+        auto& idxs = class_to_indices[c];
+        if (idxs.empty()) continue;
+
+        std::sort(idxs.begin(), idxs.end(), [&](int a, int b) {
+            return candidates[a].prob > candidates[b].prob;
+        });
+        if ((int)idxs.size() > PRE_NMS_TOPK_PER_CLASS) {
+            idxs.resize(PRE_NMS_TOPK_PER_CLASS);
+        }
+
+        std::vector<bool> suppressed(idxs.size(), false);
+        for (size_t i = 0; i < idxs.size(); ++i) {
+            if (suppressed[i]) continue;
+            const int keep_i = idxs[i];
+            keep_indices.push_back(keep_i);
+            for (size_t j = i + 1; j < idxs.size(); ++j) {
+                if (suppressed[j]) continue;
+                if (iou(candidates[keep_i].box, candidates[idxs[j]].box) > NMS_THRESH) {
+                    suppressed[j] = true;
+                }
             }
         }
     }
-    DBG_PRINT("results=%zu after nms\n", results.size());
+    const auto t_nms_end = std::chrono::steady_clock::now();
+    t_nms_ms = std::chrono::duration<double, std::milli>(t_nms_end - t_nms_start).count();
+    DBG_PRINT("keep=%zu after nms\n", keep_indices.size());
+
+    // 只对保留目标计算 mask（重）
+    const auto t_mask_start = std::chrono::steady_clock::now();
+    for (int idx : keep_indices) {
+        const Candidate& cand = candidates[idx];
+        const float cx = cand.cx_m;
+        const float cy = cand.cy_m;
+        const float w = cand.w_m;
+        const float h = cand.h_m;
+
+        int bx1 = std::max(0, (int)(cx - w / 2));
+        int by1 = std::max(0, (int)(cy - h / 2));
+        int bx2 = std::min(model_w, (int)(cx + w / 2));
+        int by2 = std::min(model_h, (int)(cy + h / 2));
+        if (bx2 <= bx1 || by2 <= by1) {
+            continue;
+        }
+
+        cv::Mat coeffs(1, mask_proto_dim, CV_32F);
+        for (int m = 0; m < mask_proto_dim; ++m) {
+            coeffs.at<float>(0, m) = cand.coeffs[m];
+        }
+        cv::Mat mask_flat = coeffs * proto_mat;
+        cv::exp(-mask_flat, mask_flat);
+        mask_flat = 1.0 / (1.0 + mask_flat);
+
+        cv::Mat mask_raw = mask_flat.reshape(1, proto_h);
+        cv::Mat mask_upscaled;
+        cv::resize(mask_raw, mask_upscaled, cv::Size(model_w, model_h));
+
+        cv::Mat mask_cropped = mask_upscaled(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
+        cv::Mat mask_bin;
+        cv::threshold(mask_cropped, mask_bin, 0.5, 1, cv::THRESH_BINARY);
+        mask_bin.convertTo(mask_bin, CV_8U);
+
+        SegObject obj;
+        obj.box = cand.box;
+        obj.label = cand.label;
+        obj.prob = cand.prob;
+        cv::resize(mask_bin, obj.mask, obj.box.size(), 0, 0, cv::INTER_NEAREST);
+        results.push_back(std::move(obj));
+    }
+    const auto t_mask_end = std::chrono::steady_clock::now();
+    t_mask_ms = std::chrono::duration<double, std::milli>(t_mask_end - t_mask_start).count();
+    DBG_PRINT("results=%zu after mask\n", results.size());
+
+    const auto t_all_end = std::chrono::steady_clock::now();
+    const double t_all_ms = std::chrono::duration<double, std::milli>(t_all_end - t_all_start).count();
+    DBG_PRINT("time breakdown (ms): total=%.3f proto_mat=%.3f candidate_scan=%.3f nms_prepare=%.3f nms=%.3f mask=%.3f\n",
+              t_all_ms, t_proto_mat_ms, t_candidate_scan_ms, t_nms_prepare_ms, t_nms_ms, t_mask_ms);
 }
 
 void draw_results(cv::Mat& img, const std::vector<SegObject>& results) {
@@ -201,7 +285,7 @@ void draw_results(cv::Mat& img, const std::vector<SegObject>& results) {
         // Draw Label
         std::string label = std::to_string(obj.label) + ": " + std::to_string(obj.prob).substr(0, 4);
         cv::putText(img, label, cv::Point(obj.box.x, obj.box.y - 5),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+                    cv::FONT_HERSHEY_SIMPLEX, 4, cv::Scalar(0, 255, 0), 5);
 
         // Draw Mask Overlay
         if (!obj.mask.empty()) {

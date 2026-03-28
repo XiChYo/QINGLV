@@ -15,7 +15,7 @@ void calDistance::distance(const QPoint& corPoint)
     float percY = picY / picWidth;
 
     float realPosX = realLength * percX;
-    float realPosY = realWidth * percY + endToSpray - 0.25;
+    float realPosY = realWidth * percY + endToSpray - 0.32;
 
     int index = getIndex(realPosX);
 
