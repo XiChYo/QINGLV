@@ -14,44 +14,87 @@ camerathread::~camerathread()
 {
     stop();
 }
-bool camerathread::openCamera()
+bool camerathread::openCamera(const QString& ip)
 {
+    m_ip = ip;
     LOG_INFO("Initialize camera");
     try{
+        m_ip = ip;
+
+        LOG_INFO("Initialize camera");
+
         int nRet = MV_CC_Initialize();
         if (MV_OK != nRet)
         {
-            printf("MV_CC_Initialize fail! nRet [0x%x]\n", nRet);
-            emit errorMegSig(QString("MV_CC_Initialize fail! nRet [0x%x]\n").arg(nRet));
-            return -1;
+            emit errorMegSig(QString("MV_CC_Initialize fail! 0x%1").arg(nRet));
+            return false;
         }
 
         MV_CC_DEVICE_INFO_LIST devList = {0};
-        memset(&devList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
         MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
 
-        MV_CC_CreateHandle(&m_hCam, devList.pDeviceInfo[0]);
-        int ret = MV_CC_OpenDevice(m_hCam);
+        if (devList.nDeviceNum == 0)
+        {
+            emit errorMegSig("No camera found");
+            return false;
+        }
 
-        // 像素格式
-        MV_CC_SetEnumValue(m_hCam, "PixelFormat", PixelType_Gvsp_BGR8_Packed);
+        MV_CC_DEVICE_INFO* targetDevice = nullptr;
 
-        // 曝光
-        MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
-        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 1000.0f); // 1ms
+        // 🔥 遍历设备，匹配 IP
+        for (unsigned int i = 0; i < devList.nDeviceNum; i++)
+        {
+            MV_CC_DEVICE_INFO* pDeviceInfo = devList.pDeviceInfo[i];
 
-        // 白平衡
-        MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
+            if (pDeviceInfo->nTLayerType != MV_GIGE_DEVICE)
+                continue;
 
-        // 帧率控制
-        MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
-        MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
+            MV_GIGE_DEVICE_INFO* pGigEInfo =
+                &pDeviceInfo->SpecialInfo.stGigEInfo;
 
-        if (ret != MV_OK) {
-            qDebug() << "Open camera failed";
+            // 转 IP
+            QString camIP = QString("%1.%2.%3.%4")
+                    .arg((pGigEInfo->nCurrentIp >> 24) & 0xFF)
+                    .arg((pGigEInfo->nCurrentIp >> 16) & 0xFF)
+                    .arg((pGigEInfo->nCurrentIp >> 8) & 0xFF)
+                    .arg(pGigEInfo->nCurrentIp & 0xFF);
+
+            qDebug() << "Find camera IP:" << camIP;
+
+            if (camIP == ip)
+            {
+                targetDevice = pDeviceInfo;
+                break;
+            }
+        }
+
+        if (!targetDevice)
+        {
+            emit errorMegSig("Target IP camera not found: " + ip);
+            return false;
+        }
+
+        // 🔥 用目标设备创建句柄
+        if (MV_CC_CreateHandle(&m_hCam, targetDevice) != MV_OK)
+        {
+            emit errorMegSig("Create handle failed");
+            return false;
+        }
+
+        if (MV_CC_OpenDevice(m_hCam) != MV_OK)
+        {
             emit errorMegSig("Open camera failed");
             return false;
         }
+
+        // ========= 原来的配置保持 =========
+        MV_CC_SetEnumValue(m_hCam, "PixelFormat", PixelType_Gvsp_BGR8_Packed);
+        MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
+        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 1000.0f);
+        MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
+
+        MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
+        MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
 
         MV_CC_SetEnumValue(m_hCam, "AcquisitionMode", 2);
         MV_CC_SetEnumValue(m_hCam, "TriggerMode", 0);
@@ -59,6 +102,47 @@ bool camerathread::openCamera()
         MV_CC_StartGrabbing(m_hCam);
 
         m_running = true;
+//        int nRet = MV_CC_Initialize();
+//        if (MV_OK != nRet)
+//        {
+//            printf("MV_CC_Initialize fail! nRet [0x%x]\n", nRet);
+//            emit errorMegSig(QString("MV_CC_Initialize fail! nRet [0x%x]\n").arg(nRet));
+//            return -1;
+//        }
+
+//        MV_CC_DEVICE_INFO_LIST devList = {0};
+//        memset(&devList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
+//        MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
+
+//        MV_CC_CreateHandle(&m_hCam, devList.pDeviceInfo[0]);
+//        int ret = MV_CC_OpenDevice(m_hCam);
+
+//        // 像素格式
+//        MV_CC_SetEnumValue(m_hCam, "PixelFormat", PixelType_Gvsp_BGR8_Packed);
+
+//        // 曝光
+//        MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
+//        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 1000.0f); // 1ms
+
+//        // 白平衡
+//        MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
+
+//        // 帧率控制
+//        MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
+//        MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
+
+//        if (ret != MV_OK) {
+//            qDebug() << "Open camera failed";
+//            emit errorMegSig("Open camera failed");
+//            return false;
+//        }
+
+//        MV_CC_SetEnumValue(m_hCam, "AcquisitionMode", 2);
+//        MV_CC_SetEnumValue(m_hCam, "TriggerMode", 0);
+
+//        MV_CC_StartGrabbing(m_hCam);
+
+//        m_running = true;
     }catch(std::exception& e)
     {
         emit errorMegSig(e.what());
@@ -147,6 +231,7 @@ void camerathread::run()
 
 //                bool ok = image.load(saveDirPath);
                 // 必须 copy，防止内存复用
+                qDebug()<<"camera";
                 emit frameReadySig(img, fileName);
 
                 MV_CC_FreeImageBuffer(m_hCam, &frame);

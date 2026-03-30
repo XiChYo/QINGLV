@@ -34,7 +34,8 @@ public slots:
     void distance(const QPoint& corPoint);
 
 signals:
-    void s_point(const std::vector<ValveCmd>& cmds, float realPosY);
+//    void s_point(const std::vector<ValveCmd>& cmds, float realPosY);
+    void s_point(QByteArray robotOrder);
 
 };
 

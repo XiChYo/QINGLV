@@ -109,7 +109,7 @@ MainWindow::MainWindow(QWidget *parent)
                 this, &MainWindow::uploadOSSPath);
         connect(camThread, &camerathread::errorMegSig,
                 this, &MainWindow::cameraerrorMegSig,Qt::QueuedConnection);
-        if (camThread->openCamera()) {
+        if (camThread->openCamera("192.168.1.30")) {
             LOG_INFO("Camera thread started");
             camThread->start();
         }
@@ -128,8 +128,8 @@ MainWindow::MainWindow(QWidget *parent)
 
 
         m_tracker = new ConveyorTracker;
-        connect(m_calDistance,&calDistance::s_point,
-                m_tracker, &ConveyorTracker::addTask);
+//        connect(m_calDistance,&calDistance::s_point,
+//                m_tracker, &ConveyorTracker::addTask);
 
         connect(m_tracker, &ConveyorTracker::taskFinished,
                 this, &MainWindow::doTask);
@@ -145,7 +145,9 @@ MainWindow::MainWindow(QWidget *parent)
         m_tcpserver->moveToThread(threadPool_robot);
         connect(ui->chan3, &QPushButton::clicked,
                 m_tcpserver, &tcpforrobot::startServer);
-        connect(this, &MainWindow::tcpPosSig,
+//        connect(this, &MainWindow::tcpPosSig,
+//                m_tcpserver, &tcpforrobot::sendData);
+        connect(m_calDistance,&calDistance::s_point,
                 m_tcpserver, &tcpforrobot::sendData);
 
 
@@ -897,14 +899,14 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
          static_cast<quint8>(frame[7]);
     speed = rotation * 0.502;
     QString speed_text = QString::number(int(speed)) + "m/min";
+//    camThread->captureIntervalMs = 1000;
 
-
-    if (speed < 1)
-    {
-        camThread->captureIntervalMs = 500;  // ms
-    }else {
-        camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000 / 3;  // ms
-    }
+//    if (speed < 1)
+//    {
+//        camThread->captureIntervalMs = 500;  // ms
+//    }else {
+//        camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000 / 3;  // ms
+//    }
 
 //    qDebug()<< "camThread->captureIntervalMs"<<camThread->captureIntervalMs;
 

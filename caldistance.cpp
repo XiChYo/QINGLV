@@ -7,21 +7,23 @@ calDistance::calDistance(QObject* parent):QObject(parent)
 
 void calDistance::distance(const QPoint& corPoint)
 {
-    if (corPoint.x() == -1 && corPoint.y() == -1) return;
-    int picX = corPoint.x();
-    int picY = 2048 - corPoint.y();
+//    if (corPoint.x() == -1 && corPoint.y() == -1) return;
+//    int picX = corPoint.x();
+//    int picY = 2048 - corPoint.y();
 
-    float percX = picX / picLength;
-    float percY = picY / picWidth;
+//    float percX = picX / picLength;
+//    float percY = picY / picWidth;
 
-    float realPosX = realLength * percX;
-    float realPosY = realWidth * percY + endToSpray - 0.32;
+//    float realPosX = realLength * percX;
+//    float realPosY = realWidth * percY + endToSpray - 0.32;
 
-    int index = getIndex(realPosX);
+//    int index = getIndex(realPosX);
 
-    const std::vector<ValveCmd>& results = generateCommands(index);
+//    const std::vector<ValveCmd>& results = generateCommands(index);
 
-    emit s_point(results, realPosY);
+
+
+    emit s_point("10,0");
 
     return;
 

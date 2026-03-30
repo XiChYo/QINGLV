@@ -12,10 +12,10 @@ public:
     camerathread(QObject* parent = nullptr);
     ~camerathread();
 
-    bool openCamera();
+    bool openCamera(const QString& ip);
     void stop();
 
-    float captureIntervalMs  = 500; // 采样周期，单位毫秒，皮带速度按照1m/s计算
+    float captureIntervalMs  = 1000; // 采样周期，单位毫秒，皮带速度按照1m/s计算
 
 protected:
     void run() override;
@@ -28,6 +28,8 @@ private:
     void* m_hCam = nullptr;
     bool m_running = false;
     unsigned char* rgbBuffer = nullptr;
+
+    QString m_ip;
 };
 
 #endif // CAMERA_THREAD_H

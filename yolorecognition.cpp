@@ -701,17 +701,6 @@ int yolorecognition::recognition(const QImage& image) {
 }
 cv::Mat yolorecognition::QImage2Mat(const QImage& image)
 {
-    if (image.format() == QImage::Format_RGB888)
-    {
-        cv::Mat mat(image.height(),
-                    image.width(),
-                    CV_8UC3,
-                    const_cast<uchar*>(image.bits()),
-                    image.bytesPerLine());
-
-        return mat.clone();  // 深拷贝，线程安全
-    }
-
     QImage converted = image.convertToFormat(QImage::Format_RGB888);
 
     cv::Mat mat(converted.height(),
@@ -720,8 +709,36 @@ cv::Mat yolorecognition::QImage2Mat(const QImage& image)
                 const_cast<uchar*>(converted.bits()),
                 converted.bytesPerLine());
 
-    return mat.clone();
+    cv::Mat mat_clone = mat.clone();  // 深拷贝
+
+    // ⭐ 关键：RGB → BGR
+    cv::cvtColor(mat_clone, mat_clone, cv::COLOR_RGB2BGR);
+
+    return mat_clone;
 }
+//cv::Mat yolorecognition::QImage2Mat(const QImage& image)
+//{
+//    if (image.format() == QImage::Format_RGB888)
+//    {
+//        cv::Mat mat(image.height(),
+//                    image.width(),
+//                    CV_8UC3,
+//                    const_cast<uchar*>(image.bits()),
+//                    image.bytesPerLine());
+
+//        return mat.clone();  // 深拷贝，线程安全
+//    }
+
+//    QImage converted = image.convertToFormat(QImage::Format_RGB888);
+
+//    cv::Mat mat(converted.height(),
+//                converted.width(),
+//                CV_8UC3,
+//                const_cast<uchar*>(converted.bits()),
+//                converted.bytesPerLine());
+
+//    return mat.clone();
+//}
 
 QImage yolorecognition::matToQImage(const cv::Mat& mat)
 {
