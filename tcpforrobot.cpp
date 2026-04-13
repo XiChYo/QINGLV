@@ -18,10 +18,11 @@ tcpforrobot::~tcpforrobot()
 // 启动服务
 bool tcpforrobot::startServer()
 {
-    qDebug() << "Server started listening";
-    if (m_server->listen(QHostAddress::Any, port))
+    if (m_server->listen(QHostAddress::Any, 5000))
     {
-        qDebug() << "Server started, port:" << port;
+        qDebug() << "Server started!";
+        qDebug() << "Real listen address:" << m_server->serverAddress().toString();
+        qDebug() << "Real listen port:" << m_server->serverPort();
         return true;
     }
     else
@@ -48,21 +49,66 @@ void tcpforrobot::stopServer()
 }
 
 // 新连接
-void tcpforrobot::onNewConnection()
+//void tcpforrobot::onNewConnection()
+//{
+//    m_clientSocket = m_server->nextPendingConnection();
+
+//    isConnected = true;
+
+//    qDebug() << "Client connected:"
+//             << m_clientSocket->peerAddress().toString()
+//             << m_clientSocket->peerPort();
+
+//    connect(m_clientSocket, &QTcpSocket::readyRead,
+//            this, &tcpforrobot::onReadyRead);
+
+//    connect(m_clientSocket, &QTcpSocket::disconnected,
+//            this, &tcpforrobot::onDisconnected);
+//}
+void tcpforrobot::test()
 {
-    m_clientSocket = m_server->nextPendingConnection();
-
-    qDebug() << "Client connected:"
-             << m_clientSocket->peerAddress().toString()
-             << m_clientSocket->peerPort();
-
-    connect(m_clientSocket, &QTcpSocket::readyRead,
-            this, &tcpforrobot::onReadyRead);
-
-    connect(m_clientSocket, &QTcpSocket::disconnected,
-            this, &tcpforrobot::onDisconnected);
+//    QThread::msleep(1000);
+    qDebug()<<"777777777777777777;";
 }
 
+void tcpforrobot::onNewConnection()
+{
+    while (m_server->hasPendingConnections())
+    {
+        QTcpSocket* client = m_server->nextPendingConnection();
+
+        QString ip = client->peerAddress().toString();
+
+        // 处理 ::ffff:192.168.x.x
+        if (ip.contains("::ffff:"))
+            ip = ip.split("::ffff:")[1];
+
+        qDebug() << "Client connected:" << ip;
+
+
+        m_clients[ip] = client;
+
+        emit clientConnected(ip);
+
+        connect(client, &QTcpSocket::readyRead, this, [=]()
+        {
+            QByteArray data = client->readAll();
+            qDebug() << ip << "Received:" << data;
+
+            client->write("ACK\n");
+        });
+
+        connect(client, &QTcpSocket::disconnected, this, [=]()
+        {
+            qDebug() << "Client disconnected:" << ip;
+
+            m_clients.remove(ip);
+            client->deleteLater();
+
+            emit clientDisconnected(ip);
+        });
+    }
+}
 // 接收数据
 void tcpforrobot::onReadyRead()
 {
@@ -84,14 +130,46 @@ void tcpforrobot::onDisconnected()
 }
 
 // 发送数据
-void tcpforrobot::sendData(const QByteArray &data)
+void tcpforrobot::sendData(const QByteArray &data, float time)
 {
+    qDebug() << time <<"ms后执行*****************";
+    QThread::msleep(time);
+    qDebug() << "执行*********************";
     if (m_clientSocket && m_clientSocket->state() == QAbstractSocket::ConnectedState)
     {
+        qDebug()<<"^^^^^^^^^^^^^^^^^^^send data:"<< data<<"%%%%%%%%%%%%%%%%%%%%%";
         m_clientSocket->write(data);
     }
     else
     {
         qDebug() << "No client connected";
     }
+}
+
+void tcpforrobot::sendToIP(const QString& ip, const QByteArray &data)
+{
+    if (!m_clients.contains(ip))
+    {
+        qDebug() << "IP not connected:" << ip;
+        return;
+    }
+
+    QTcpSocket* socket = m_clients[ip];
+
+
+    if (socket->state() == QAbstractSocket::ConnectedState)
+    {
+//        qDebug() << "Send to" << ip << ":" << data;
+        socket->write(data);
+    }
+
+}
+bool tcpforrobot::isConnected(const QString& ip)
+{
+    if (!m_clients.contains(ip))
+        return false;
+
+    QTcpSocket* socket = m_clients.value(ip);
+
+    return socket && socket->state() == QAbstractSocket::ConnectedState;
 }

@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QThread>
+#include <QTimer>
 
 class tcpforrobot : public QObject
 {
@@ -20,9 +22,17 @@ public:
     void stopServer();
 
     // 发送数据
-    void sendData(const QByteArray &data);
+    void sendData(const QByteArray &data, float time);
 
     int port = 5000;
+
+
+
+    void sendToIP(const QString& ip, const QByteArray &data);
+
+    void test();
+
+    bool isConnected(const QString& ip);
 
 private slots:
     // 新连接
@@ -37,6 +47,13 @@ private slots:
 private:
     QTcpServer *m_server;
     QTcpSocket *m_clientSocket;
+
+    QMap<QString, QTcpSocket*> m_clients;
+
+
+signals:
+    void clientConnected(QString ip);
+    void clientDisconnected(QString ip);
 };
 
 #endif // TCPFORROBOT_H

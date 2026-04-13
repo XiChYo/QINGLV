@@ -15,7 +15,7 @@ public:
     bool openCamera(const QString& ip);
     void stop();
 
-    float captureIntervalMs  = 1000; // 采样周期，单位毫秒，皮带速度按照1m/s计算
+    float captureIntervalMs  = 0; // 采样周期，单位毫秒，皮带速度按照1m/s计算
 
 protected:
     void run() override;

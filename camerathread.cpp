@@ -231,7 +231,7 @@ void camerathread::run()
 
 //                bool ok = image.load(saveDirPath);
                 // 必须 copy，防止内存复用
-                qDebug()<<"camera";
+//                qDebug()<<"camera";
                 emit frameReadySig(img, fileName);
 
                 MV_CC_FreeImageBuffer(m_hCam, &frame);

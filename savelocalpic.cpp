@@ -19,7 +19,7 @@ void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName)
     times += 1;
     QImage imgReal = img;  // 把图像复制的代码放到这里来，不要放在相机线程
     imgReal.detach();  // 转换深拷贝
-    qDebug() << "savePic times:" << QString::number(times);
+//    qDebug() << "savePic times:" << QString::number(times);
     // 保存图片到本地saveRawPic文件夹
     QString baseDir = QCoreApplication::applicationDirPath();
 

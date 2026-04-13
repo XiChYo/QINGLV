@@ -9,10 +9,11 @@ bool robotControl::initRobot()
 {
 //    int nRet = -1;
     // 连接机器人
-//    const char* hostname = "192.168.0.10";
-//    unsigned short nPort = 10003;
+//    const char* hostname = "192.168.0.20";
+//    unsigned short nPort = 5000;
     qDebug()<<"start initrobot";
     nRet = HRIF_Connect(0,hostname,nPort);
+    qDebug()<<"连接控制器(启动主站，连接从站)";
     // 机器人本体上电
     nRet = HRIF_Electrify(0);
     qDebug()<<"连接控制器(启动主站，连接从站)";
@@ -20,6 +21,7 @@ bool robotControl::initRobot()
     {
         int nCurFSM = -1;
         HRIF_ReadCurFSMFromCPS(0,0, nCurFSM);
+        qDebug()<<"nCurFSM"<<nCurFSM;
         if(nCurFSM==14)
         {
            // 连接控制器(启动主站，连接从站)
@@ -36,6 +38,7 @@ bool robotControl::initRobot()
         nRet = HRIF_IsControllerStarted(0,nStarted);
         if(nStarted==1)
         {
+            qDebug()<<"nStarted==1";
             break;
         }
         QThread::sleep(0.2);
@@ -62,6 +65,8 @@ void robotControl::testRobotControl()
     // 连接机器人
 //    const char* hostname = "10.20.60.144";
 //    unsigned short nPort = 10003;
+//    const char* hostname = "192.168.0.20";
+//    unsigned short nPort = 5000;
     qDebug()<<"start testrobotcontrol";
     nRet = HRIF_Connect(0,hostname,nPort);
 

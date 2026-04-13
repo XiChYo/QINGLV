@@ -66,24 +66,63 @@ private slots:
 
     void on_chan1_clicked();
 
-    void on_chan2_clicked();
-
-//    void on_chan3_clicked();
-
-    void on_chan4_clicked();
-
-    void on_chan5_clicked();
-
-    void on_chan6_clicked();
-
-    void on_chan7_clicked();
-
-    void on_chan8_clicked();
-
-    void on_chan9_clicked();
 
     void doTask(Task task);
 
+    void getAndsendA(int x);
+
+
+    void on_addmTime_clicked();
+
+    void on_lessmTime_clicked();
+
+
+    void on_u0_clicked();
+
+    void on_d0_clicked();
+
+    void on_u150_clicked();
+
+    void on_d150_clicked();
+
+    void on_u180_clicked();
+
+    void on_d180_clicked();
+
+    void on_u210_clicked();
+
+    void on_d210_clicked();
+
+    void on_u240_clicked();
+
+    void on_d240_clicked();
+
+    void on_u270_clicked();
+
+    void on_d270_clicked();
+
+    void on_u300_clicked();
+
+    void on_d300_clicked();
+
+    void on_u330_clicked();
+
+    void on_d330_clicked();
+
+    void chan1_chan(QString ip);
+
+
+    void on_auEnd_clicked();
+
+    void on_adEnd_clicked();
+
+    void on_auMoreTime_clicked();
+
+    void on_adMoreTime_clicked();
+
+    void on_aless300_clicked();
+
+    void on_dless300_clicked();
 
 private:
     Ui::MainWindow *ui;
@@ -116,11 +155,11 @@ private:
 
     robotControl* m_robot;
 
-    tcpforrobot *m_tcpserver;
+    tcpforrobot *m_tcpserverA;
 
     QThread* threadPool;
     QThread* threadPool_yolo;
-    QThread* threadPool_robot;
+    QThread* threadPool_robotA;
 
     QString logMsg;
     bool uploadOssSorF;
@@ -141,6 +180,13 @@ private:
     std::thread m_thread;
     bool m_running;
     float speed;
+
+    bool isABusy = false;
+    bool isBBusy = false;
+
+    bool isAconnected = false;
+    bool isBconnected = false;
+
 signals:
     void singleControl(QString order);
     void batchControl(QString order);
@@ -149,7 +195,9 @@ signals:
 
     void testinitRobot();
     void testMoveRobot();
-    void tcpPosSig(QByteArray data);
-
+    void tcpPosSigA(QByteArray data, float time);
+    void tcpPosSigB(QByteArray data, float time);
+    void tcpRobotSigA();
+    void isUseA();
 };
 #endif // MAINWINDOW_H

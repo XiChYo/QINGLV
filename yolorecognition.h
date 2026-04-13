@@ -7,6 +7,16 @@
 #include <QPoint>
 #include "rknn_api.h"
 #include "postprocess.h"
+
+struct RknnModelSession {
+    rknn_context ctx = 0;
+    unsigned char* model_data = nullptr;
+    int model_data_size = 0;
+    rknn_input_output_num io_num {};
+    rknn_tensor_attr input0_attr {};
+    std::vector<rknn_tensor_attr> output_attrs;
+};
+
 class yolorecognition : public QObject
 {
     Q_OBJECT
@@ -21,8 +31,18 @@ public slots:
 signals:
     void objPointSig(QPoint objPoint);
     void resultImgSig(const QImage& img);
+
+    void pointSig(int x);
 private:
     bool initTF = false;
+    QPoint run_seg_predict(const RknnModelSession& session,
+                           const cv::Mat& orig_img,
+                           int topk_class_count,
+                           const std::vector<uint8_t>& enabled_mask,
+                           bool draw_overlay,
+                           cv::Mat& result_img);
+
+
 };
 
 #endif // YOLORECOGNITION_H
