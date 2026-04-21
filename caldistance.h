@@ -38,8 +38,8 @@ public slots:
     void distance(const QPoint& corPoint);
     void calATime();
 signals:
-//    void s_point(const std::vector<ValveCmd>& cmds, float realPosY);
-    void s_point(QByteArray robotOrder, float time);
+    void s_point(const std::vector<ValveCmd>& cmds, float realPosY);
+//    void s_point(QByteArray robotOrder, float time);
 
 };
 

@@ -134,8 +134,8 @@ MainWindow::MainWindow(QWidget *parent)
                 m_calDistance, &calDistance::calATime);
 
         m_tracker = new ConveyorTracker;
-//        connect(m_calDistance,&calDistance::s_point,
-//                m_tracker, &ConveyorTracker::addTask);
+        connect(m_calDistance,&calDistance::s_point,
+                m_tracker, &ConveyorTracker::addTask);
 
         connect(m_tracker, &ConveyorTracker::taskFinished,
                 this, &MainWindow::doTask);
@@ -153,20 +153,20 @@ MainWindow::MainWindow(QWidget *parent)
                 m_tcpserverA, &tcpforrobot::startServer);
         connect(this, &MainWindow::tcpPosSigA,
                 m_tcpserverA, &tcpforrobot::sendData);
-        connect(m_calDistance,&calDistance::s_point,
-                m_tcpserverA, &tcpforrobot::sendData);
+//        connect(m_calDistance,&calDistance::s_point,
+//                m_tcpserverA, &tcpforrobot::sendData);
         connect(m_tcpserverA, &tcpforrobot::clientConnected,
                 this, &MainWindow::chan1_chan);
 
-//        m_running = true;
-//        m_thread = std::thread([this]()
-//        {
-//                while(m_running)
-//        {
-//                m_tracker->updateSpeed(speed);
-//                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-//    }
-//    });
+        m_running = true;
+        m_thread = std::thread([this]()
+        {
+                while(m_running)
+        {
+                m_tracker->updateSpeed(speed);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    });
 
         // 线程池中的线程启动
         threadPool->start();
@@ -1062,7 +1062,41 @@ void MainWindow::getAndsendA(int x)
 
         int baseTime;
 
-        if (!isABusy && m_tcpserverA->isConnected("192.168.0.30"))
+        if(!isBBusy && m_tcpserverA->isConnected("192.168.0.20")){
+            if (grapPos < -300)
+            {
+                grapPos -= ui->less300->text().toInt();
+            }
+            baseTime = ui->mTimeLabel->text().toInt();
+
+            if (grapPos >= -150)
+            {
+                index = 0;
+            }
+            else
+            {
+                index = (int)((-grapPos - 150) / ui->aEnd->text().toInt()) + 1;
+            }
+            mTime = baseTime - index * ui->aMoreTime->text().toInt();
+
+            QString str = QString("\n%1,0,0\n").arg(grapPos);
+            QByteArray grapPosdata = str.toUtf8();
+
+            qDebug()<<"---------------use B---------------";
+            qDebug()<<"grapPos:"<<grapPos;
+            qDebug()<<"mTime:"<<mTime;
+            isBBusy = true;
+
+            QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
+                qDebug()<<"send BBB:"<<grapPosdata;
+                m_tcpserverA->sendToIP("192.168.0.20", grapPosdata);
+            });
+
+            QTimer::singleShot(10000, this, [this]() {
+                isBBusy = false;
+                qDebug() << "----B released----";
+            });
+        }else if (!isABusy && m_tcpserverA->isConnected("192.168.0.30"))
         {
             if (grapPos < -300)
             {
@@ -1113,47 +1147,48 @@ void MainWindow::getAndsendA(int x)
                 m_tcpserverA->sendToIP("192.168.0.30", grapPosdata);
             });
 
-            QTimer::singleShot(5000, this, [this]() {
+            QTimer::singleShot(5200, this, [this]() {
                 isABusy = false;
                 qDebug() << "----A released----";
             });
 
-        }else if(!isBBusy && m_tcpserverA->isConnected("192.168.0.20")){
-
-            if (grapPos < -300)
-            {
-                grapPos -= ui->less300->text().toInt();
-            }
-            baseTime = ui->mTimeLabel->text().toInt();
-
-            if (grapPos >= -150)
-            {
-                index = 0;
-            }
-            else
-            {
-                index = (int)((-grapPos - 150) / ui->aEnd->text().toInt()) + 1;
-            }
-            mTime = baseTime - index * ui->aMoreTime->text().toInt();
-
-            QString str = QString("\n%1,0,0\n").arg(grapPos);
-            QByteArray grapPosdata = str.toUtf8();
-
-            qDebug()<<"---------------use B---------------";
-            qDebug()<<"grapPos:"<<grapPos;
-            qDebug()<<"mTime:"<<mTime;
-            isBBusy = true;
-
-            QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
-                qDebug()<<"send BBB:"<<grapPosdata;
-                m_tcpserverA->sendToIP("192.168.0.20", grapPosdata);
-            });
-
-            QTimer::singleShot(10000, this, [this]() {
-                isBBusy = false;
-                qDebug() << "----B released----";
-            });
         }
+//        else if(!isBBusy && m_tcpserverA->isConnected("192.168.0.20")){
+
+//            if (grapPos < -300)
+//            {
+//                grapPos -= ui->less300->text().toInt();
+//            }
+//            baseTime = ui->mTimeLabel->text().toInt();
+
+//            if (grapPos >= -150)
+//            {
+//                index = 0;
+//            }
+//            else
+//            {
+//                index = (int)((-grapPos - 150) / ui->aEnd->text().toInt()) + 1;
+//            }
+//            mTime = baseTime - index * ui->aMoreTime->text().toInt();
+
+//            QString str = QString("\n%1,0,0\n").arg(grapPos);
+//            QByteArray grapPosdata = str.toUtf8();
+
+//            qDebug()<<"---------------use B---------------";
+//            qDebug()<<"grapPos:"<<grapPos;
+//            qDebug()<<"mTime:"<<mTime;
+//            isBBusy = true;
+
+//            QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
+//                qDebug()<<"send BBB:"<<grapPosdata;
+//                m_tcpserverA->sendToIP("192.168.0.20", grapPosdata);
+//            });
+
+//            QTimer::singleShot(10000, this, [this]() {
+//                isBBusy = false;
+//                qDebug() << "----B released----";
+//            });
+//        }
     }
 }
 

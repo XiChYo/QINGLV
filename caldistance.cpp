@@ -27,17 +27,17 @@ void calDistance::distance(const QPoint& corPoint)
     float realPosY = realWidth * percY + 900; // mm
     float time = realPosY / 100;   // 100mm/s
 
-    float biaX = 2 * (realPosX - 500 + 57.5);
-    QString result_string = QString("%1,0").arg(biaX);
-    QByteArray result_QB = result_string.toUtf8();
+//    float biaX = 2 * (realPosX - 500 + 57.5);
+//    QString result_string = QString("%1,0").arg(biaX);
+//    QByteArray result_QB = result_string.toUtf8();
 
-//    int index = getIndex(realPosX);
+    int index = getIndex(realPosX);
 
-//    const std::vector<ValveCmd>& results = generateCommands(index);
+    const std::vector<ValveCmd>& results = generateCommands(index);
 
 
 
-//    emit s_point(result_QB, time);
+    emit s_point(results, realPosY);
 
     return;
 

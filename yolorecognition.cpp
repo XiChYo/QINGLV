@@ -650,7 +650,7 @@ QPoint yolorecognition::run_seg_predict(const RknnModelSession& session,
 }
 yolorecognition::yolorecognition(QObject* parent):QObject(parent)
 {
-
+    
 }
 int yolorecognition::recognition(const QImage& image) {
 //    if (argc < 3) {

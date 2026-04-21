@@ -33,6 +33,9 @@ signals:
     void resultImgSig(const QImage& img);
 
     void pointSig(int x);
+    void frameReadySig(const QImage& img);
+    
+    
 private:
     bool initTF = false;
     QPoint run_seg_predict(const RknnModelSession& session,
