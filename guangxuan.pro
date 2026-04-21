@@ -59,7 +59,6 @@ HEADERS += \
     tracker_worker.h \
     updatemanager.h \
     uploadpictooss.h \
-    valvecmd.h \
     yolo_session.h \
     yolo_worker.h
 

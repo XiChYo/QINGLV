@@ -248,8 +248,6 @@ MainWindow::MainWindow(QWidget *parent)
         connect(m_tcpserverA, &tcpforrobot::clientConnected,
                 this, &MainWindow::chan1_chan);
 
-        m_running = false;
-
         // 线程池中的线程启动
         threadPool->start();
         threadPool_robotA->start();
@@ -259,18 +257,7 @@ MainWindow::MainWindow(QWidget *parent)
         m_trackerThread->start();
         m_dispatcherThread->start();
 
-        // Session 初始化:PR5 将并入 Session 状态机。
-        // 启动顺序:先 Board/Tracker/Dispatcher(消费者就位),再 Yolo,最后 Camera(生产者)。
-        QMetaObject::invokeMethod(m_board, "onSessionStart", Qt::QueuedConnection,
-                                  Q_ARG(RuntimeConfig, m_cfg));
-        QMetaObject::invokeMethod(m_tracker, "onSessionStart", Qt::QueuedConnection,
-                                  Q_ARG(RuntimeConfig, m_cfg));
-        QMetaObject::invokeMethod(m_dispatcher, "onSessionStart", Qt::QueuedConnection,
-                                  Q_ARG(RuntimeConfig, m_cfg));
-        QMetaObject::invokeMethod(m_yoloWorker, "sessionStart", Qt::QueuedConnection,
-                                  Q_ARG(RuntimeConfig, m_cfg));
-        QMetaObject::invokeMethod(m_cameraWorker, "sessionStart", Qt::QueuedConnection,
-                                  Q_ARG(RuntimeConfig, m_cfg));
+        // Session 由 Run 按钮显式触发,构造期仅完成线程/连线就位。
     }catch(std::exception& e)
     {
         logMsg = "MainFuc: " + QString::fromStdString(e.what());
@@ -280,23 +267,9 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    // 停止新管道:按 生产者 → 消费者 → 执行器 的顺序,
-    // 且每步 BlockingQueuedConnection 等目标线程确认干净,
-    // 才能让相机/RKNN/串口资源在 QThread 退出事件循环前释放干净。
-    if (m_cameraWorker && m_cameraThread && m_cameraThread->isRunning()) {
-        QMetaObject::invokeMethod(m_cameraWorker, "sessionStop", Qt::BlockingQueuedConnection);
-    }
-    if (m_yoloWorker && m_yoloThread && m_yoloThread->isRunning()) {
-        QMetaObject::invokeMethod(m_yoloWorker, "sessionStop", Qt::BlockingQueuedConnection);
-    }
-    if (m_tracker && m_trackerThread && m_trackerThread->isRunning()) {
-        QMetaObject::invokeMethod(m_tracker, "onSessionStop", Qt::BlockingQueuedConnection);
-    }
-    if (m_dispatcher && m_dispatcherThread && m_dispatcherThread->isRunning()) {
-        QMetaObject::invokeMethod(m_dispatcher, "onSessionStop", Qt::BlockingQueuedConnection);
-    }
-    if (m_board && m_boardThread && m_boardThread->isRunning()) {
-        QMetaObject::invokeMethod(m_board, "onSessionStop", Qt::BlockingQueuedConnection);
+    // 任何状态退出前都要保证 worker 已 sessionStop,才能让 相机/RKNN/串口 资源释放干净。
+    if (m_sessionState != SessionState::Idle) {
+        stopSession();
     }
 
     auto stopPool = [](QThread*& pool) {
@@ -493,7 +466,12 @@ void MainWindow::onAnyButtonClicked()
 
 void MainWindow::on_reset_clicked()
 {
-    // Placeholder:重置动作将由 PR5 UI 整理阶段重新设计
+    // Stop 按钮:硬停。
+    // 幂等:已经 Idle 直接忽略,其它态一律走 stopSession。
+    if (m_sessionState == SessionState::Idle) {
+        return;
+    }
+    stopSession();
 }
 
 // 本次软件启动时，根据上次选择的按钮状态
@@ -520,7 +498,93 @@ void MainWindow::loadSelectedButtonsFromIni()
 }
 void MainWindow::on_run_clicked()
 {
-    // Placeholder:Run 动作将由 PR5 UI 整理阶段接入 Session 状态机
+    // Run 按钮:进入 Running。
+    if (m_sessionState == SessionState::Running) {
+        LOG_INFO("Run clicked while already Running; ignore.");
+        return;
+    }
+    if (m_sessionState == SessionState::Stopping) {
+        LOG_INFO("Run clicked while Stopping; please wait.");
+        return;
+    }
+    if (!startSession()) {
+        LOG_ERROR("startSession() failed, remain Idle.");
+    }
+}
+
+void MainWindow::refreshEnabledClassIdsFromUi()
+{
+    // 把 allButtons 里 state==true 的按钮,按 objectName / 显示文本 双路,
+    // 匹配到 m_cfg.classButtons 的 name,合成 enabledClassIds。
+    // 注:现网按钮的 objectName 是 ini groupName 下的 key,text 才是 name,
+    // 两种约定都兼容,避免 PR5 UI 整理之前漏匹配。
+    QSet<int> enabled;
+    for (const ClassButton& cb : m_cfg.classButtons) {
+        for (QPushButton* btn : allButtons) {
+            if (!btn) continue;
+            if (!btn->property("state").toBool()) continue;
+            if (btn->objectName() == cb.name || btn->text() == cb.name) {
+                enabled.insert(cb.classId);
+                break;
+            }
+        }
+    }
+    m_cfg.enabledClassIds = enabled;
+}
+
+bool MainWindow::startSession()
+{
+    // 1) 刷新 UI 勾选 → m_cfg.enabledClassIds
+    refreshEnabledClassIdsFromUi();
+
+    // 2) 依次 sessionStart:
+    //    Board → Tracker → Dispatcher(消费者就位)→ Yolo → Camera(生产者)
+    if (!m_boardThread || !m_boardThread->isRunning()) {
+        LOG_ERROR("startSession: board thread not running.");
+        return false;
+    }
+    QMetaObject::invokeMethod(m_board, "onSessionStart", Qt::QueuedConnection,
+                              Q_ARG(RuntimeConfig, m_cfg));
+    QMetaObject::invokeMethod(m_tracker, "onSessionStart", Qt::QueuedConnection,
+                              Q_ARG(RuntimeConfig, m_cfg));
+    QMetaObject::invokeMethod(m_dispatcher, "onSessionStart", Qt::QueuedConnection,
+                              Q_ARG(RuntimeConfig, m_cfg));
+    QMetaObject::invokeMethod(m_yoloWorker, "sessionStart", Qt::QueuedConnection,
+                              Q_ARG(RuntimeConfig, m_cfg));
+    QMetaObject::invokeMethod(m_cameraWorker, "sessionStart", Qt::QueuedConnection,
+                              Q_ARG(RuntimeConfig, m_cfg));
+
+    m_sessionState = SessionState::Running;
+    LOG_INFO(QString("Session started. enabledClasses=%1")
+             .arg(m_cfg.enabledClassIds.size()));
+    return true;
+}
+
+void MainWindow::stopSession()
+{
+    m_sessionState = SessionState::Stopping;
+    LOG_INFO("Session stopping...");
+
+    // 按反向:Camera(生产者) → Yolo → Tracker → Dispatcher → Board。
+    // 生产者停下来,后面的消费者才会自然空载。
+    if (m_cameraWorker && m_cameraThread && m_cameraThread->isRunning()) {
+        QMetaObject::invokeMethod(m_cameraWorker, "sessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_yoloWorker && m_yoloThread && m_yoloThread->isRunning()) {
+        QMetaObject::invokeMethod(m_yoloWorker, "sessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_tracker && m_trackerThread && m_trackerThread->isRunning()) {
+        QMetaObject::invokeMethod(m_tracker, "onSessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_dispatcher && m_dispatcherThread && m_dispatcherThread->isRunning()) {
+        QMetaObject::invokeMethod(m_dispatcher, "onSessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_board && m_boardThread && m_boardThread->isRunning()) {
+        QMetaObject::invokeMethod(m_board, "onSessionStop", Qt::BlockingQueuedConnection);
+    }
+
+    m_sessionState = SessionState::Idle;
+    LOG_INFO("Session stopped.");
 }
 
 void MainWindow::on_powerbutton_clicked()

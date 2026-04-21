@@ -12,9 +12,7 @@
 #include <QTranslator>
 #include <QLabel>
 #include "savelocalpic.h"
-#include <thread>
 #include <atomic>
-#include "valvecmd.h"
 #include "robotcontrol.h"
 #include "tcpforrobot.h"
 #include "camera_worker.h"
@@ -136,6 +134,17 @@ private:
     // 启动时的配置快照(PR5 将切换为 Session 状态机按需加载)
     RuntimeConfig m_cfg;
 
+    // ---- Session 状态机(PR5) ----
+    enum class SessionState { Idle, Running, Stopping };
+    SessionState m_sessionState = SessionState::Idle;
+
+    // 根据 UI 勾选态合成 enabledClassIds,更新进 m_cfg
+    void refreshEnabledClassIdsFromUi();
+    // Run 按钮入口:合成 cfg → 依次 sessionStart 所有 worker
+    bool startSession();
+    // Stop/析构共用路径:按反向顺序 BlockingQueued sessionStop
+    void stopSession();
+
     QString logMsg;
     bool uploadOssSorF;
     QTranslator m_translator;
@@ -152,8 +161,6 @@ private:
 
     void onEncoderSpeed(const QByteArray& frame);
 
-    std::thread m_thread;
-    bool m_running;
     float speed;
 
     bool isABusy = false;

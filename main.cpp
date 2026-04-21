@@ -4,7 +4,6 @@
 #include <QTranslator>
 #include <QLocale>
 #include <QSettings>
-#include "valvecmd.h"
 #include "pipeline_types.h"
 #include "pipeline_clock.h"
 #include "runtime_config.h"
@@ -14,10 +13,6 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
 
     pipeline::initClock();
-
-    qRegisterMetaType<ValveCmd>("ValveCmd");
-    qRegisterMetaType<std::vector<ValveCmd>>("std::vector<ValveCmd>");
-    qRegisterMetaType<Task>("Task");
 
     qRegisterMetaType<DetectedObject>("DetectedObject");
     qRegisterMetaType<DetectedFrame>("DetectedFrame");
