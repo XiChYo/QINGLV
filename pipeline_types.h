@@ -20,11 +20,13 @@
 // ----------------------------------------------------------------------------
 struct DetectedObject
 {
-    int       classId       = -1;
-    float     confidence    = 0.0f;
-    cv::Rect  bboxPx;
+    int        classId       = -1;
+    float      confidence    = 0.0f;
+    cv::Rect   bboxPx;
     // mask 尺寸 = bboxPx.size(),CV_8UC1,非零表示命中
-    cv::Mat   maskPx;
+    cv::Mat    maskPx;
+    // 像素坐标下的重心(mask 主轮廓矩;没有 mask 则退化成 bbox 中心)
+    cv::Point2f centerPx {0.f, 0.f};
 };
 
 // ----------------------------------------------------------------------------

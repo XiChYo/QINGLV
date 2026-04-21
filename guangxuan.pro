@@ -23,29 +23,32 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     boardcontrol.cpp \
-    camerathread.cpp \
+    camera_worker.cpp \
     logger.cpp \
     main.cpp \
     mainwindow.cpp \
     pipeline_clock.cpp \
     postprocess.cpp \
+    postprocess_ex.cpp \
     robotcontrol.cpp \
     runtime_config.cpp \
     savelocalpic.cpp \
     tcpforrobot.cpp \
     updatemanager.cpp \
     uploadpictooss.cpp \
-    yolorecognition.cpp
+    yolo_session.cpp \
+    yolo_worker.cpp
 
 HEADERS += \
     boardcontrol.h \
-    camerathread.h \
+    camera_worker.h \
     logger.h \
     mainwindow.h \
     library/mvs/includes/MvCameraControl.h \
     pipeline_clock.h \
     pipeline_types.h \
     postprocess.h \
+    postprocess_ex.h \
     robotcontrol.h \
     runtime_config.h \
     savelocalpic.h \
@@ -53,7 +56,8 @@ HEADERS += \
     updatemanager.h \
     uploadpictooss.h \
     valvecmd.h \
-    yolorecognition.h
+    yolo_session.h \
+    yolo_worker.h
 
 
 FORMS += \

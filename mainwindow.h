@@ -8,17 +8,18 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
-#include "camerathread.h"
 #include "uploadpictooss.h"
 #include <QTranslator>
 #include <QLabel>
 #include "savelocalpic.h"
 #include <thread>
 #include <atomic>
-#include "yolorecognition.h"
 #include "valvecmd.h"
 #include "robotcontrol.h"
 #include "tcpforrobot.h"
+#include "camera_worker.h"
+#include "yolo_worker.h"
+#include "runtime_config.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -50,6 +51,9 @@ private slots:
     void updateFrame(const QImage& img);
 
     void cameraerrorMegSig(const QString &msg);
+
+    // 接 YoloWorker::detectedFrameReady(PR2 暂仅做一行日志,PR4 接 Tracker)
+    void onDetectedFrame(const DetectedFrame& frame);
 
     void uploadOSSPath(const QString& filePath, const int ImgClass);
 
@@ -85,18 +89,25 @@ private:
     QGraphicsView* view;
     QGraphicsScene* scene;
     QGraphicsPixmapItem* pixmapItem;
-    camerathread* camThread;
+
+    // ---- 新管道 worker(PR2) ----
+    CameraWorker* m_cameraWorker = nullptr;
+    YoloWorker*   m_yoloWorker   = nullptr;
+    QThread*      m_cameraThread = nullptr;
+    QThread*      m_yoloThread   = nullptr;
+
+    // ---- 历史 worker(保留) ----
     uploadpictoOSS* ossThread;
     saveLocalpic* savelocalpicThread;
-    yolorecognition* yolorecogThread;
 
     robotControl* m_robot;
-
     tcpforrobot *m_tcpserverA;
 
     QThread* threadPool;
-    QThread* threadPool_yolo;
     QThread* threadPool_robotA;
+
+    // 启动时的配置快照(PR5 将切换为 Session 状态机按需加载)
+    RuntimeConfig m_cfg;
 
     QString logMsg;
     bool uploadOssSorF;

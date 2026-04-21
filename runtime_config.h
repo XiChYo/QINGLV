@@ -29,10 +29,12 @@ struct RuntimeConfig
     float   realWidthMm    = 470.0f;   // 图像 y 方向对应物理长度
 
     // ---- model & yolo ----
-    QString modelPath      = "/opt/models/yolov8seg.rknn";
-    int     modelInputSize = 1024;
-    float   confThreshold  = 0.25f;
-    float   nmsThreshold   = 0.45f;
+    QString modelPath             = "/opt/models/yolov8seg.rknn";
+    int     modelInputSize        = 1024;
+    int     modelTopkClassCount   = 80;     // 兼容 top-k 布局的兜底
+    float   confThreshold         = 0.25f;
+    float   nmsThreshold          = 0.45f;
+    bool    drawOverlay           = true;   // 是否给 UI 发带 mask/box/label 的 overlay 图
     QVector<ClassButton> classButtons;
 
     // ---- pipeline ----

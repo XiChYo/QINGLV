@@ -23,8 +23,10 @@ RuntimeConfig loadRuntimeConfig(const QString& iniPath)
 
     // [model]
     s.beginGroup("model");
-    cfg.modelPath      = s.value("path", cfg.modelPath).toString();
-    cfg.modelInputSize = s.value("input_size", cfg.modelInputSize).toInt();
+    cfg.modelPath             = s.value("path", cfg.modelPath).toString();
+    cfg.modelInputSize        = s.value("input_size", cfg.modelInputSize).toInt();
+    cfg.modelTopkClassCount   = s.value("topk_class_count",
+                                        cfg.modelTopkClassCount).toInt();
     // 品类按钮:model/class_btn/size, model/class_btn/N/name|id
     const int btnCount = s.value("class_btn/size", 0).toInt();
     for (int i = 1; i <= btnCount; ++i) {
@@ -41,6 +43,7 @@ RuntimeConfig loadRuntimeConfig(const QString& iniPath)
     s.beginGroup("yolo");
     cfg.confThreshold = s.value("conf_threshold", cfg.confThreshold).toFloat();
     cfg.nmsThreshold  = s.value("nms_threshold", cfg.nmsThreshold).toFloat();
+    cfg.drawOverlay   = s.value("draw_overlay", cfg.drawOverlay).toBool();
     s.endGroup();
 
     // [pipeline]

@@ -19,6 +19,7 @@
 #include "updatemanager.h"
 #include "boardcontrol.h"
 #include "pipeline_clock.h"
+#include "runtime_config.h"
 
 // ============================================================================
 // QSS 片段:tab 按钮的激活/非激活样式
@@ -105,10 +106,14 @@ MainWindow::MainWindow(QWidget *parent)
         ui->cameraview->setRenderHint(QPainter::Antialiasing, false);
         ui->cameraview->setRenderHint(QPainter::SmoothPixmapTransform, true);
 
+        // 加载一次性配置
+        m_cfg = loadRuntimeConfig(QStringLiteral("config.ini"));
+
         // 线程池
-        threadPool = new QThread;
-        threadPool_yolo = new QThread;
-        threadPool_robotA = new QThread;
+        threadPool         = new QThread(this);
+        threadPool_robotA  = new QThread(this);
+        m_cameraThread     = new QThread(this);
+        m_yoloThread       = new QThread(this);
 
         // OSS线程
         ossThread = new uploadpictoOSS;
@@ -135,27 +140,42 @@ MainWindow::MainWindow(QWidget *parent)
         // 保存本地文件线程
         savelocalpicThread = new saveLocalpic;
         savelocalpicThread->moveToThread(threadPool);
-
-        // 摄像头线程
-        camThread = new camerathread;
         connect(savelocalpicThread, &saveLocalpic::forOSSPathSig,
                 this, &MainWindow::uploadOSSPath);
-        connect(camThread, &camerathread::errorMegSig,
-                this, &MainWindow::cameraerrorMegSig,Qt::QueuedConnection);
-        if (camThread->openCamera("192.168.1.30")) {
-            LOG_INFO("Camera thread started");
-            camThread->start();
-        }
 
-        yolorecogThread = new yolorecognition;
-        yolorecogThread->moveToThread(threadPool_yolo);
-        connect(camThread, &camerathread::frameReadySig,
-                yolorecogThread, &yolorecognition::recognition);
-        connect(yolorecogThread, &yolorecognition::resultImgSig,
-                this, &MainWindow::updateFrame);
+        // ---- 新管道:CameraWorker ----
+        m_cameraWorker = new CameraWorker;
+        m_cameraWorker->moveToThread(m_cameraThread);
+        connect(m_cameraThread, &QThread::finished,
+                m_cameraWorker, &QObject::deleteLater);
+        connect(m_cameraWorker, &CameraWorker::cameraError,
+                this, &MainWindow::cameraerrorMegSig, Qt::QueuedConnection);
 
-        // NOTE: pointSig/objPointSig 的新路由将在 PR4 由 TrackerWorker/Dispatcher 接管,
-        // PR1 阶段仅拆线,不再连接旧的 calDistance / ConveyorTracker 链路。
+        // ---- 新管道:YoloWorker ----
+        m_yoloWorker = new YoloWorker;
+        m_yoloWorker->moveToThread(m_yoloThread);
+        connect(m_yoloThread, &QThread::finished,
+                m_yoloWorker, &QObject::deleteLater);
+
+        // Camera -> Yolo(跨线程,QueuedConnection,值拷贝,线程安全)
+        connect(m_cameraWorker, &CameraWorker::frameReadySig,
+                m_yoloWorker,   &YoloWorker::onFrame,
+                Qt::QueuedConnection);
+
+        // Yolo overlay -> UI 主线程
+        connect(m_yoloWorker, &YoloWorker::resultImgReady,
+                this,         &MainWindow::updateFrame,
+                Qt::QueuedConnection);
+
+        // Yolo 结构化结果 -> UI 主线程(PR4 将改由 TrackerWorker 接)
+        connect(m_yoloWorker, &YoloWorker::detectedFrameReady,
+                this,         &MainWindow::onDetectedFrame,
+                Qt::QueuedConnection);
+
+        // 反压:Yolo 处理完 -> Camera 解锁下一帧
+        connect(m_yoloWorker,   &YoloWorker::frameConsumed,
+                m_cameraWorker, &CameraWorker::onFrameConsumed,
+                Qt::QueuedConnection);
 
         m_robot = new robotControl;
         m_robot->moveToThread(threadPool_robotA);
@@ -177,8 +197,16 @@ MainWindow::MainWindow(QWidget *parent)
 
         // 线程池中的线程启动
         threadPool->start();
-        threadPool_yolo->start();
         threadPool_robotA->start();
+        m_cameraThread->start();
+        m_yoloThread->start();
+
+        // YoloWorker::sessionStart 在 yolo 线程里执行(昂贵的 rknn_init)
+        QMetaObject::invokeMethod(m_yoloWorker, "sessionStart", Qt::QueuedConnection,
+                                  Q_ARG(RuntimeConfig, m_cfg));
+        // CameraWorker::sessionStart 在相机线程里执行
+        QMetaObject::invokeMethod(m_cameraWorker, "sessionStart", Qt::QueuedConnection,
+                                  Q_ARG(RuntimeConfig, m_cfg));
     }catch(std::exception& e)
     {
         logMsg = "MainFuc: " + QString::fromStdString(e.what());
@@ -188,8 +216,13 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    if (camThread) {
-        camThread->stop();
+    // 停止新管道:必须在工作线程 alive 时,阻塞式调 sessionStop,
+    // 才能让相机/RKNN 资源在 QThread 退出事件循环前释放干净。
+    if (m_cameraWorker && m_cameraThread && m_cameraThread->isRunning()) {
+        QMetaObject::invokeMethod(m_cameraWorker, "sessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_yoloWorker && m_yoloThread && m_yoloThread->isRunning()) {
+        QMetaObject::invokeMethod(m_yoloWorker, "sessionStop", Qt::BlockingQueuedConnection);
     }
 
     auto stopPool = [](QThread*& pool) {
@@ -199,8 +232,9 @@ MainWindow::~MainWindow()
         delete pool;
         pool = nullptr;
     };
+    stopPool(m_cameraThread);
+    stopPool(m_yoloThread);
     stopPool(threadPool);
-    stopPool(threadPool_yolo);
     stopPool(threadPool_robotA);
 
     delete ui;
@@ -421,6 +455,15 @@ void MainWindow::updateFrame(const QImage &img)
 {
     pixmapItem->setPixmap(QPixmap::fromImage(img));
     ui->cameraview->fitInView(pixmapItem, Qt::KeepAspectRatio);
+}
+
+void MainWindow::onDetectedFrame(const DetectedFrame& frame)
+{
+    // PR2 仅落一行日志;PR4 将由 TrackerWorker 订阅该信号做跨帧关联。
+    LOG_INFO(QString("Yolo: %1 objs @t_capture=%2 t_infer_done=%3")
+             .arg(frame.objs.size())
+             .arg(frame.tCaptureMs)
+             .arg(frame.tInferDoneMs));
 }
 
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
