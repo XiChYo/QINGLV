@@ -16,9 +16,6 @@
 #include <thread>
 #include <atomic>
 #include "yolorecognition.h"
-#include "yolothread.h"
-#include "caldistance.h"
-#include "ConveyorTracker.h"
 #include "valvecmd.h"
 #include "robotcontrol.h"
 #include "tcpforrobot.h"
@@ -66,63 +63,7 @@ private slots:
 
     void on_chan1_clicked();
 
-
-    void doTask(Task task);
-
-    void getAndsendA(int x);
-
-
-    void on_addmTime_clicked();
-
-    void on_lessmTime_clicked();
-
-
-    void on_u0_clicked();
-
-    void on_d0_clicked();
-
-    void on_u150_clicked();
-
-    void on_d150_clicked();
-
-    void on_u180_clicked();
-
-    void on_d180_clicked();
-
-    void on_u210_clicked();
-
-    void on_d210_clicked();
-
-    void on_u240_clicked();
-
-    void on_d240_clicked();
-
-    void on_u270_clicked();
-
-    void on_d270_clicked();
-
-    void on_u300_clicked();
-
-    void on_d300_clicked();
-
-    void on_u330_clicked();
-
-    void on_d330_clicked();
-
     void chan1_chan(QString ip);
-
-
-    void on_auEnd_clicked();
-
-    void on_adEnd_clicked();
-
-    void on_auMoreTime_clicked();
-
-    void on_adMoreTime_clicked();
-
-    void on_aless300_clicked();
-
-    void on_dless300_clicked();
 
 private:
     Ui::MainWindow *ui;
@@ -148,10 +89,6 @@ private:
     uploadpictoOSS* ossThread;
     saveLocalpic* savelocalpicThread;
     yolorecognition* yolorecogThread;
-//    yolothread* m_yolothread;
-    calDistance* m_calDistance;
-
-    ConveyorTracker* m_tracker;
 
     robotControl* m_robot;
 

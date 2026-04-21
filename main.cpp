@@ -5,14 +5,29 @@
 #include <QLocale>
 #include <QSettings>
 #include "valvecmd.h"
+#include "pipeline_types.h"
+#include "pipeline_clock.h"
+#include "runtime_config.h"
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 
+    pipeline::initClock();
+
     qRegisterMetaType<ValveCmd>("ValveCmd");
     qRegisterMetaType<std::vector<ValveCmd>>("std::vector<ValveCmd>");
     qRegisterMetaType<Task>("Task");
+
+    qRegisterMetaType<DetectedObject>("DetectedObject");
+    qRegisterMetaType<DetectedFrame>("DetectedFrame");
+    qRegisterMetaType<TrackedObject>("TrackedObject");
+    qRegisterMetaType<DispatchedGhost>("DispatchedGhost");
+    qRegisterMetaType<SortTask>("SortTask");
+    qRegisterMetaType<SpeedSample>("SpeedSample");
+    qRegisterMetaType<ValvePulse>("ValvePulse");
+    qRegisterMetaType<QVector<ValvePulse>>("QVector<ValvePulse>");
+    qRegisterMetaType<RuntimeConfig>("RuntimeConfig");
 
     //读取 config.ini 中的语言设置
     QSettings settings("config.ini", QSettings::IniFormat);

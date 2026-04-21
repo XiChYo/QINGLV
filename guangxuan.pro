@@ -22,40 +22,38 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    ConveyorTracker.cpp \
     boardcontrol.cpp \
-    caldistance.cpp \
     camerathread.cpp \
     logger.cpp \
     main.cpp \
     mainwindow.cpp \
+    pipeline_clock.cpp \
     postprocess.cpp \
     robotcontrol.cpp \
+    runtime_config.cpp \
     savelocalpic.cpp \
     tcpforrobot.cpp \
     updatemanager.cpp \
     uploadpictooss.cpp \
-    yolorecognition.cpp \
-    yolothread.cpp
+    yolorecognition.cpp
 
 HEADERS += \
-    ConveyorTracker.h \
     boardcontrol.h \
-    caldistance.h \
     camerathread.h \
     logger.h \
     mainwindow.h \
     library/mvs/includes/MvCameraControl.h \
+    pipeline_clock.h \
+    pipeline_types.h \
     postprocess.h \
     robotcontrol.h \
+    runtime_config.h \
     savelocalpic.h \
     tcpforrobot.h \
     updatemanager.h \
     uploadpictooss.h \
     valvecmd.h \
-    yolorecognition.h \
-    yoloresulttypes.h \
-    yolothread.h
+    yolorecognition.h
 
 
 FORMS += \

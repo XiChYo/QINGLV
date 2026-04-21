@@ -18,8 +18,43 @@
 #include <QDir>
 #include "updatemanager.h"
 #include "boardcontrol.h"
+#include "pipeline_clock.h"
 
+// ============================================================================
+// QSS 片段:tab 按钮的激活/非激活样式
+// 之前三处重复,抽取成静态字符串常量
+// ============================================================================
+namespace {
 
+static const char* kTabBtnActiveQss =
+    "QPushButton {"
+    "border-left: 1px solid #e0e0e0;"
+    "border-right: 1px solid #e0e0e0;"
+    "border-top: none;"
+    "border-bottom: 1px solid #e0e0e0;"
+    "border-radius: 0px;"
+    "background-color: rgb(242, 242, 242);"
+    "color: green;"
+    "}"
+    "QPushButton:pressed {"
+    "background-color: #e0e0e0;"
+    "}";
+
+static const char* kTabBtnIdleQss =
+    "QPushButton {"
+    "border-left: 1px solid #e0e0e0;"
+    "border-right: 1px solid #e0e0e0;"
+    "border-top: none;"
+    "border-bottom: 1px solid #e0e0e0;"
+    "border-radius: 0px;"
+    "background-color: rgb(242, 242, 242);"
+    "color: black;"
+    "}"
+    "QPushButton:pressed {"
+    "background-color: #e0e0e0;"
+    "}";
+
+}  // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -119,26 +154,8 @@ MainWindow::MainWindow(QWidget *parent)
         connect(yolorecogThread, &yolorecognition::resultImgSig,
                 this, &MainWindow::updateFrame);
 
-        connect(yolorecogThread, &yolorecognition::pointSig,
-                this, &MainWindow::getAndsendA);
-
-        //        connect(yolorecogThread, &yolorecognition::frameReadySig,
-        //                savelocalpicThread, &saveLocalpic::savelocalpicture);
-
-
-        m_calDistance = new calDistance;
-        m_calDistance->moveToThread(threadPool_yolo);
-        connect(yolorecogThread, &yolorecognition::objPointSig,
-                m_calDistance,&calDistance::distance);
-        connect(this,&MainWindow::isUseA,
-                m_calDistance, &calDistance::calATime);
-
-        m_tracker = new ConveyorTracker;
-        connect(m_calDistance,&calDistance::s_point,
-                m_tracker, &ConveyorTracker::addTask);
-
-        connect(m_tracker, &ConveyorTracker::taskFinished,
-                this, &MainWindow::doTask);
+        // NOTE: pointSig/objPointSig 的新路由将在 PR4 由 TrackerWorker/Dispatcher 接管,
+        // PR1 阶段仅拆线,不再连接旧的 calDistance / ConveyorTracker 链路。
 
         m_robot = new robotControl;
         m_robot->moveToThread(threadPool_robotA);
@@ -153,20 +170,10 @@ MainWindow::MainWindow(QWidget *parent)
                 m_tcpserverA, &tcpforrobot::startServer);
         connect(this, &MainWindow::tcpPosSigA,
                 m_tcpserverA, &tcpforrobot::sendData);
-//        connect(m_calDistance,&calDistance::s_point,
-//                m_tcpserverA, &tcpforrobot::sendData);
         connect(m_tcpserverA, &tcpforrobot::clientConnected,
                 this, &MainWindow::chan1_chan);
 
-        m_running = true;
-        m_thread = std::thread([this]()
-        {
-                while(m_running)
-        {
-                m_tracker->updateSpeed(speed);
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    });
+        m_running = false;
 
         // 线程池中的线程启动
         threadPool->start();
@@ -181,20 +188,22 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    delete ui;
-    camThread->stop();  // 关闭相机线程
+    if (camThread) {
+        camThread->stop();
+    }
 
-    if (threadPool) {
-        threadPool->quit();   // 通知线程事件循环退出
-        threadPool->wait();   // 阻塞等待线程真正结束
-        delete threadPool;    // 释放线程对象
-        threadPool = nullptr;
-    }
-    m_running = false;
-    if(m_thread.joinable())
-    {
-        m_thread.join();
-    }
+    auto stopPool = [](QThread*& pool) {
+        if (!pool) return;
+        pool->quit();
+        pool->wait();
+        delete pool;
+        pool = nullptr;
+    };
+    stopPool(threadPool);
+    stopPool(threadPool_yolo);
+    stopPool(threadPool_robotA);
+
+    delete ui;
 }
 
 void MainWindow::createButtonsFromini(const QString& groupName, int startRow, int maxRows, QList<QPushButton*>& targetList)
@@ -269,137 +278,35 @@ void MainWindow::cameraerrorMegSig(const QString &msg)
 }
 void MainWindow::on_homepage_clicked()
 {
-    // 显示首页，关闭其它页面
     ui->homePage->show();
     ui->materialSelection->hide();
     ui->systemManagement->hide();
 
-    ui->homepage->setStyleSheet("QPushButton {"
-                                "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                "border-top: none;"              /* 去掉上边框 */
-                                "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                "border-radius: 0px;"            /* 去掉四角弧度 */
-                                "background-color: rgb(242, 242, 242);"
-                                "color: green;"
-                                "}"
-                                "QPushButton:pressed {"
-                                "background-color: #e0e0e0;"
-                                "}");
-    ui->materialselection->setStyleSheet("QPushButton {"
-                                         "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                         "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                         "border-top: none;"              /* 去掉上边框 */
-                                         "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                         "border-radius: 0px;"            /* 去掉四角弧度 */
-                                         "background-color: rgb(242, 242, 242);"
-                                         "color: black;"
-                                        "}"
-                                         "QPushButton:pressed {"
-                                         "background-color: #e0e0e0;"
-                                         "}");
-    ui->systemmanagement->setStyleSheet("QPushButton {"
-                                        "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                        "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                        "border-top: none;"              /* 去掉上边框 */
-                                        "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                        "border-radius: 0px;"            /* 去掉四角弧度 */
-                                        "background-color: rgb(242, 242, 242);"
-                                        "color: black;"
-                                        "}"
-                                        "QPushButton:pressed {"
-                                        "background-color: #e0e0e0;"
-                                        "}");
+    ui->homepage->setStyleSheet(kTabBtnActiveQss);
+    ui->materialselection->setStyleSheet(kTabBtnIdleQss);
+    ui->systemmanagement->setStyleSheet(kTabBtnIdleQss);
 }
 
 void MainWindow::on_materialselection_clicked()
 {
-    // 显示物料选择
     ui->homePage->hide();
     ui->materialSelection->show();
     ui->systemManagement->hide();
 
-    ui->homepage->setStyleSheet("QPushButton {"
-                                "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                "border-top: none;"              /* 去掉上边框 */
-                                "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                "border-radius: 0px;"            /* 去掉四角弧度 */
-                                "background-color: rgb(242, 242, 242);"
-                                "color: black;"
-                                "}"
-                                "QPushButton:pressed {"
-                                "background-color: #e0e0e0;"
-                                "}");
-    ui->materialselection->setStyleSheet("QPushButton {"
-                                         "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                         "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                         "border-top: none;"              /* 去掉上边框 */
-                                         "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                         "border-radius: 0px;"            /* 去掉四角弧度 */
-                                         "background-color: rgb(242, 242, 242);"
-                                         "color: green;"
-                                         "}"
-                                         "QPushButton:pressed {"
-                                         "background-color: #e0e0e0;"
-                                         "}");
-    ui->systemmanagement->setStyleSheet("QPushButton {"
-                                        "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                        "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                        "border-top: none;"              /* 去掉上边框 */
-                                        "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                        "border-radius: 0px;"            /* 去掉四角弧度 */
-                                        "background-color: rgb(242, 242, 242);"
-                                        "color: black;"
-                                        "}"
-                                        "QPushButton:pressed {"
-                                        "background-color: #e0e0e0;"
-                                        "}");
+    ui->homepage->setStyleSheet(kTabBtnIdleQss);
+    ui->materialselection->setStyleSheet(kTabBtnActiveQss);
+    ui->systemmanagement->setStyleSheet(kTabBtnIdleQss);
 }
 
 void MainWindow::on_systemmanagement_clicked()
 {
-    // 显示系统管理
     ui->homePage->hide();
     ui->materialSelection->hide();
     ui->systemManagement->show();
 
-    ui->homepage->setStyleSheet("QPushButton {"
-                                "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                "border-top: none;"              /* 去掉上边框 */
-                                "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                "border-radius: 0px;"            /* 去掉四角弧度 */
-                                "background-color: rgb(242, 242, 242);"
-                                "color: black;"
-                                "}"
-                                "QPushButton:pressed {"
-                                "background-color: #e0e0e0;"
-                                "}");
-    ui->materialselection->setStyleSheet("QPushButton {"
-                                         "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                         "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                         "border-top: none;"              /* 去掉上边框 */
-                                         "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                         "border-radius: 0px;"            /* 去掉四角弧度 */
-                                         "background-color: rgb(242, 242, 242);"
-                                         "color: black;"
-                                         "}"
-                                         "QPushButton:pressed {"
-                                         "background-color: #e0e0e0;"
-                                         "}");
-    ui->systemmanagement->setStyleSheet("QPushButton {"
-                                        "border-left: 1px solid #e0e0e0;"   /* 左边框 */
-                                        "border-right: 1px solid #e0e0e0;"  /* 右边框 */
-                                        "border-top: none;"              /* 去掉上边框 */
-                                        "border-bottom: 1px solid #e0e0e0;"           /* 去掉下边框 */
-                                        "border-radius: 0px;"            /* 去掉四角弧度 */
-                                        "background-color: rgb(242, 242, 242);"
-                                        "color: green;"
-                                        "}"
-                                        "QPushButton:pressed {"
-                                        "background-color: #e0e0e0;"
-                                        "}");
+    ui->homepage->setStyleSheet(kTabBtnIdleQss);
+    ui->materialselection->setStyleSheet(kTabBtnIdleQss);
+    ui->systemmanagement->setStyleSheet(kTabBtnActiveQss);
 }
 
 void MainWindow::onAnyButtonClicked()
@@ -475,37 +382,7 @@ void MainWindow::onAnyButtonClicked()
 
 void MainWindow::on_reset_clicked()
 {
-//    // 重置所有按钮状态和样式
-//    auto buttons = this->findChildren<QPushButton*>();
-//    for (auto *btn : buttons) {
-//        if (btn->objectName() == "reset" || btn->objectName() == "run" || btn->objectName() == "homepage" || btn->objectName() == "materialselection" || btn->objectName() == "systemmanagement" || btn->objectName() == "powerbutton" ) continue; // 跳过重置按钮
-//        btn->setProperty("state", false);          // 状态归 0
-//        btn->setStyleSheet(
-//                    "QPushButton {"
-//                    "background-color: white;"
-//                    "border: 1px solid gray;"
-//                    "border-radius: 10px;"
-//                    "color: black;"
-//                    "font-size: 14px;"
-//                    "}"
-//                    "QPushButton:pressed {"
-//                    "background-color: #e0e0e0;"
-//                    "border: 1px solid #555555;"
-//                    "}"); // 样式恢复默认
-//    }
-
-//    QLayout *layout = ui->showlabel;
-
-//    // 遍历 layout 中的所有子控件
-//    while (QLayoutItem* item = layout->takeAt(0)) {
-//        if (QWidget *widget = item->widget()) {
-//            QLabel *label = qobject_cast<QLabel*>(widget);
-//            if (label) {
-//                label->deleteLater();  // 删除 label
-//            }
-//        }
-//        delete item; // 删除 layoutItem
-//    }
+    // Placeholder:重置动作将由 PR5 UI 整理阶段重新设计
 }
 
 // 本次软件启动时，根据上次选择的按钮状态
@@ -532,154 +409,24 @@ void MainWindow::loadSelectedButtonsFromIni()
 }
 void MainWindow::on_run_clicked()
 {
-//    LOG_INFO("Program started");
-
-//    QGridLayout *layout = qobject_cast<QGridLayout*>(ui->showchat->layout());
-//    if (!layout) return;
-
-//    //  清空 grid layout 中原来的控件
-//    QLayoutItem *item;
-//    while ((item = layout->takeAt(0)) != nullptr) {
-//        if (item->widget())
-//            delete item->widget();
-//        delete item;
-//    }
-//    progressBars.clear(); // 清空之前的 progressbar 列表
-//    int row = 0;  // grid layout 行号
-//    int totalValue = 0; // 累加所有进度条 value
-
-//    // 进度条的颜色列表
-//    QStringList colors = {
-//        "#ffc000", "#ffff00", "#92d050", "#ffc000",
-//        "#26b9bd", "#00b0f0", "#0070c0", "#7030a0",
-//        "#ff55ff", "#550000", "#ff0000", "#ff007f"
-//    };
-//    int colorIndex = 0;
-
-//    // 记录按钮点击状态，让软件下次启动的时候可以记录状态
-//    QStringList selectedNames;
-
-//    for (QPushButton* btn : allButtons)
-//    {
-//        if (!btn)
-//            continue;
-
-//        if (btn->property("state").toBool())
-//        {
-//            selectedNames << btn->objectName();
-//        }
-//    }
-//    LOG_INFO("Clicked:" + selectedNames.join(", "));
-
-//    QString configPath = QCoreApplication::applicationDirPath() + "/config.ini";
-//    QSettings settings(configPath, QSettings::IniFormat);
-//    settings.beginGroup("SelectedButtons");
-//    settings.setValue("names", selectedNames);
-//    settings.endGroup();
-//    settings.sync();
-
-//    // 遍历 categoryButtons
-//    for (QPushButton* btn : categoryButtons)
-//    {
-//        if (!btn->property("state").toBool())
-//            continue;
-
-//        // 左侧文本
-//        QLabel* label = new QLabel(btn->text(), ui->showchat);
-//        label->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
-//        label->setStyleSheet("color: rgb(255, 255, 255); font-size: 10pt;");
-
-//        // 中间竖线
-//        QFrame* vline = new QFrame(ui->showchat);
-//        vline->setFrameShape(QFrame::VLine);
-//        vline->setFrameShadow(QFrame::Sunken);
-//        vline->setStyleSheet("background-color: rgb(255, 255, 255);");
-//        vline->setMaximumWidth(1);
-
-//        // 右侧进度条
-//        QProgressBar* bar = new QProgressBar(ui->showchat);
-//        bar->setMaximum(INT_MAX);
-
-//        // 随机生成 value
-//        int randomValue = QRandomGenerator::global()->bounded(10001); // 0~10000
-//        bar->setValue(randomValue);
-//        totalValue += randomValue;
-
-//        bar->setAlignment(Qt::AlignRight);
-//        bar->setFormat("%v");
-
-//        // 设置 QSS
-//        QString color = colors[colorIndex % colors.size()];
-//        bar->setStyleSheet(QString(
-//            "QProgressBar {"
-//            "border: none;"
-//            "background: transparent;"
-//            "color: rgb(255, 255, 255);"
-//            "font-size: 11pt;"
-//            "}"
-//            "QProgressBar::chunk {"
-//            "border: none;"
-//            "background-color: %1;"
-//            "margin: 0px;"
-//            "}"
-//        ).arg(color));
-//        colorIndex++;
-
-//        // 保存 bar 的 objectName
-//        bar->setObjectName(btn->objectName() + "_bar");
-
-//        // 保存裸指针（Qt 管理生命周期）
-//        progressBars.append(bar);
-
-//        // 加入布局
-//        layout->addWidget(label, row, 0);
-//        layout->addWidget(vline, row, 1);
-//        layout->addWidget(bar, row, 2);
-
-//        row++;
-//    }
-
-//    for (QProgressBar *bar : progressBars) {
-//        bar->setMaximum(totalValue);
-//    }
+    // Placeholder:Run 动作将由 PR5 UI 整理阶段接入 Session 状态机
 }
 
 void MainWindow::on_powerbutton_clicked()
 {
     QApplication::quit();
-//    savelocalpicThread -> testint = 1;
-//    m_tracker.addTask(1.75);
-//    // 弹出询问框
-//    QMessageBox::StandardButton reply;
-//    reply = QMessageBox::question(this, "关机确认", "是否要关机？",
-//                                  QMessageBox::Yes | QMessageBox::No);
-//    try{
-//    if (reply == QMessageBox::Yes) {
-//        LOG_INFO("Shutdown command executed");
-//        // 用户选择 Yes，执行关机命令
-//        // 测试的时候先注释掉，以免误点关机。。。
-////        QProcess::execute("shutdown /s /t 0"); // Windows 立即关机
-////        QProcess::startDetached("shutdown", QStringList() << "-h" << "now"); // Linux 立即关机
-//    }}catch(std::exception& e)
-//    {
-//        logMsg = "powerbtn: " + QString::fromStdString(e.what());
-//        LOG_ERROR(logMsg);
-//    }
 }
 
 void MainWindow::updateFrame(const QImage &img)
 {
     pixmapItem->setPixmap(QPixmap::fromImage(img));
     ui->cameraview->fitInView(pixmapItem, Qt::KeepAspectRatio);
-//    emit yoloImg(img);
 }
 
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
 {
     logMsg = "Upload image to OSS: " + filePath + "ImgClass" + ImgClass;
     LOG_INFO(logMsg);
-
-//    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
 }
 
 void MainWindow::retryUploadFailedImages()
@@ -892,30 +639,16 @@ void MainWindow::on_speedInfo_triggered()
 }
 void MainWindow::onEncoderSpeed(const QByteArray& frame)
 {
-    // frame 是原始串口数据
-//    qDebug() << "onEncoderSpeed Encoder raw:" << frame.toHex(' ').toUpper();
-
-    // ===== 示例解析（你可以按协议改）=====
     if (frame.size() < 8)
         return;
 
-    // 假设：第 5、6 字节是速度，高字节在前
+    // 协议:第 6、7 字节(0-based)为转速,高字节在前。
+    // 经验系数 0.502:单位换算为 m/min。PR3 会将该解析下沉到 BoardWorker。
     quint16 rotation =
         (static_cast<quint8>(frame[6]) << 8) |
          static_cast<quint8>(frame[7]);
     speed = rotation * 0.502;
     QString speed_text = QString::number(int(speed)) + "m/min";
-//    camThread->captureIntervalMs = 1000;
-
-//    if (speed < 1)
-//    {
-//        camThread->captureIntervalMs = 500;  // ms
-//    }else {
-//        camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000 / 3;  // ms
-//    }
-
-//    qDebug()<< "camThread->captureIntervalMs"<<camThread->captureIntervalMs;
-
     ui->speed->setText(speed_text);
 }
 
@@ -971,369 +704,4 @@ void MainWindow::chan1_chan(QString ip)
         )");
     }
 
-}
-
-
-void MainWindow::doTask(Task task)
-{
-    qDebug() << "----------------------";
-    // 1️判空
-    if (task.cmds.empty())
-    {
-        qDebug() << "Task" << task.id << "no commands";
-        return;
-    }
-
-    // 2️遍历发送
-    for (const auto& cmd : task.cmds)
-    {
-        uint8_t valve = cmd.valveId;
-        uint8_t high  = (cmd.mask >> 8) & 0xFF;
-        uint8_t low   = cmd.mask & 0xFF;
-
-        QString cmdStr = QString("%1 %2 %3")
-                .arg(valve, 2, 16, QChar('0'))
-                .arg(high, 2, 16, QChar('0'))
-                .arg(low, 2, 16, QChar('0'))
-                .toUpper();
-
-        qDebug() << "Task" << task.id << "Send:" << cmdStr;
-
-        emit batchControl(cmdStr);   //发送
-    }
-}
-void MainWindow::getAndsendA(int x)
-{
-
-
-//    if (!isABusy)
-//    {
-//        qDebug()<<"use A";
-//        isABusy = true;
-
-////        QMetaObject::invokeMethod(m_tcpserverA, [=]() {
-////            qDebug()<<"invokeMethod AAA";
-////            m_tcpserverA->test();
-////        }, Qt::QueuedConnection);
-
-
-//        QTimer::singleShot(1000, this, [this]() {
-//            qDebug()<<"invokeMethod AAA";
-//            m_tcpserverA->test();
-//        });
-
-//        QTimer::singleShot(2000, this, [this]() {
-//            isABusy = false;
-//            qDebug() << "A released";
-//        });
-
-//    }else if(!isBBusy){
-//        qDebug()<<"use B";
-//        isBBusy = true;
-////        QMetaObject::invokeMethod(m_tcpserverA, [=]() {
-////            qDebug()<<"invokeMethod BBB";
-////            m_tcpserverA->test();
-////        }, Qt::QueuedConnection);
-
-
-//        QTimer::singleShot(1000, this, [this]() {
-//            qDebug()<<"invokeMethod BBB";
-//            m_tcpserverA->test();
-//        });
-//        QTimer::singleShot(2000, this, [this]() {
-//            isBBusy = false;
-//            qDebug() << "B released";
-//        });
-//    }
-
-
-    if (m_tcpserverA->isConnected("192.168.0.30") || m_tcpserverA->isConnected("192.168.0.20"))
-    {
-        qDebug()<<"X:"<<x;
-
-
-        int index;
-
-        float grapPos = - ((2048 - x) / 2048.0f) * 560 - 57.5;   // Xmax = 800
-
-
-
-        float mTime = 3500;
-
-        int baseTime;
-
-        if(!isBBusy && m_tcpserverA->isConnected("192.168.0.20")){
-            if (grapPos < -300)
-            {
-                grapPos -= ui->less300->text().toInt();
-            }
-            baseTime = ui->mTimeLabel->text().toInt();
-
-            if (grapPos >= -150)
-            {
-                index = 0;
-            }
-            else
-            {
-                index = (int)((-grapPos - 150) / ui->aEnd->text().toInt()) + 1;
-            }
-            mTime = baseTime - index * ui->aMoreTime->text().toInt();
-
-            QString str = QString("\n%1,0,0\n").arg(grapPos);
-            QByteArray grapPosdata = str.toUtf8();
-
-            qDebug()<<"---------------use B---------------";
-            qDebug()<<"grapPos:"<<grapPos;
-            qDebug()<<"mTime:"<<mTime;
-            isBBusy = true;
-
-            QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
-                qDebug()<<"send BBB:"<<grapPosdata;
-                m_tcpserverA->sendToIP("192.168.0.20", grapPosdata);
-            });
-
-            QTimer::singleShot(10000, this, [this]() {
-                isBBusy = false;
-                qDebug() << "----B released----";
-            });
-        }else if (!isABusy && m_tcpserverA->isConnected("192.168.0.30"))
-        {
-            if (grapPos < -300)
-            {
-                grapPos -= 30;
-            }
-            baseTime = 3500;
-            if (grapPos <= -350)
-            {
-                grapPos = -350;
-            }
-
-            if (grapPos <= 0 && grapPos >= -150)
-            {
-                mTime = ui->l0->text().toInt();
-            }else if(grapPos < -150 && grapPos >= -180)
-            {
-                mTime = ui->l150->text().toInt();
-            }else if(grapPos < -180 && grapPos >= -210)
-            {
-                mTime = ui->l180->text().toInt();
-            }else if(grapPos < -210 && grapPos >= -240)
-            {
-                mTime = ui->l210->text().toInt();
-            }else if(grapPos < -240 && grapPos >= -270)
-            {
-                mTime = ui->l240->text().toInt();
-            }else if(grapPos < -270 && grapPos >= -300)
-            {
-                mTime = ui->l270->text().toInt();
-            }else if(grapPos < -300 && grapPos >= -330)
-            {
-                mTime = ui->l300->text().toInt();
-            }else if(grapPos < -330 && grapPos >= -380)
-            {
-                mTime = ui->l330->text().toInt();
-            }
-
-
-            QString str = QString("\n%1,0,0\n").arg(grapPos);
-            QByteArray grapPosdata = str.toUtf8();
-            qDebug()<<"---------------use A---------------";
-            qDebug()<<"grapPos:"<<grapPos;
-            qDebug()<<"mTime:"<<mTime;
-            isABusy = true;
-
-            QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
-                qDebug()<<"send AAA:"<<grapPosdata;
-                m_tcpserverA->sendToIP("192.168.0.30", grapPosdata);
-            });
-
-            QTimer::singleShot(5200, this, [this]() {
-                isABusy = false;
-                qDebug() << "----A released----";
-            });
-
-        }
-//        else if(!isBBusy && m_tcpserverA->isConnected("192.168.0.20")){
-
-//            if (grapPos < -300)
-//            {
-//                grapPos -= ui->less300->text().toInt();
-//            }
-//            baseTime = ui->mTimeLabel->text().toInt();
-
-//            if (grapPos >= -150)
-//            {
-//                index = 0;
-//            }
-//            else
-//            {
-//                index = (int)((-grapPos - 150) / ui->aEnd->text().toInt()) + 1;
-//            }
-//            mTime = baseTime - index * ui->aMoreTime->text().toInt();
-
-//            QString str = QString("\n%1,0,0\n").arg(grapPos);
-//            QByteArray grapPosdata = str.toUtf8();
-
-//            qDebug()<<"---------------use B---------------";
-//            qDebug()<<"grapPos:"<<grapPos;
-//            qDebug()<<"mTime:"<<mTime;
-//            isBBusy = true;
-
-//            QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
-//                qDebug()<<"send BBB:"<<grapPosdata;
-//                m_tcpserverA->sendToIP("192.168.0.20", grapPosdata);
-//            });
-
-//            QTimer::singleShot(10000, this, [this]() {
-//                isBBusy = false;
-//                qDebug() << "----B released----";
-//            });
-//        }
-    }
-}
-
-void MainWindow::on_addmTime_clicked()
-{
-    QString text = QString::number(ui->mTimeLabel->text().toInt() + 100);
-    ui->mTimeLabel->setText(text);
-}
-
-void MainWindow::on_lessmTime_clicked()
-{
-    QString text = QString::number(ui->mTimeLabel->text().toInt() - 100);
-    ui->mTimeLabel->setText(text);
-}
-
-
-void MainWindow::on_u0_clicked()
-{
-    QString text = QString::number(ui->l0->text().toInt() + 10);
-    ui->l0->setText(text);
-}
-
-void MainWindow::on_d0_clicked()
-{
-    QString text = QString::number(ui->l0->text().toInt() - 10);
-    ui->l0->setText(text);
-}
-
-void MainWindow::on_u150_clicked()
-{
-    QString text = QString::number(ui->l150->text().toInt() + 10);
-    ui->l150->setText(text);
-}
-
-void MainWindow::on_d150_clicked()
-{
-    QString text = QString::number(ui->l150->text().toInt() - 10);
-    ui->l150->setText(text);
-}
-
-void MainWindow::on_u180_clicked()
-{
-    QString text = QString::number(ui->l180->text().toInt() + 10);
-    ui->l180->setText(text);
-}
-
-void MainWindow::on_d180_clicked()
-{
-    QString text = QString::number(ui->l180->text().toInt() - 10);
-    ui->l180->setText(text);
-}
-
-void MainWindow::on_u210_clicked()
-{
-    QString text = QString::number(ui->l210->text().toInt() + 10);
-    ui->l210->setText(text);
-}
-
-void MainWindow::on_d210_clicked()
-{
-    QString text = QString::number(ui->l210->text().toInt() - 10);
-    ui->l210->setText(text);
-}
-
-void MainWindow::on_u240_clicked()
-{
-    QString text = QString::number(ui->l240->text().toInt() + 10);
-    ui->l240->setText(text);
-}
-
-void MainWindow::on_d240_clicked()
-{
-    QString text = QString::number(ui->l240->text().toInt() - 10);
-    ui->l240->setText(text);
-}
-
-void MainWindow::on_u270_clicked()
-{
-    QString text = QString::number(ui->l270->text().toInt() + 10);
-    ui->l270->setText(text);
-}
-
-void MainWindow::on_d270_clicked()
-{
-    QString text = QString::number(ui->l270->text().toInt() - 10);
-    ui->l270->setText(text);
-}
-
-void MainWindow::on_u300_clicked()
-{
-    QString text = QString::number(ui->l300->text().toInt() + 10);
-    ui->l300->setText(text);
-}
-
-void MainWindow::on_d300_clicked()
-{
-    QString text = QString::number(ui->l300->text().toInt() - 10);
-    ui->l300->setText(text);
-}
-
-void MainWindow::on_u330_clicked()
-{
-    QString text = QString::number(ui->l330->text().toInt() + 10);
-    ui->l330->setText(text);
-}
-
-void MainWindow::on_d330_clicked()
-{
-    QString text = QString::number(ui->l330->text().toInt() - 10);
-    ui->l330->setText(text);
-}
-
-
-void MainWindow::on_auEnd_clicked()
-{
-    QString text = QString::number(ui->aEnd->text().toInt() + 5);
-    ui->aEnd->setText(text);
-}
-
-void MainWindow::on_adEnd_clicked()
-{
-    QString text = QString::number(ui->aEnd->text().toInt() - 5);
-    ui->aEnd->setText(text);
-}
-
-void MainWindow::on_auMoreTime_clicked()
-{
-    QString text = QString::number(ui->aMoreTime->text().toInt() + 5);
-    ui->aMoreTime->setText(text);
-}
-
-void MainWindow::on_adMoreTime_clicked()
-{
-    QString text = QString::number(ui->aMoreTime->text().toInt() - 5);
-    ui->aMoreTime->setText(text);
-}
-
-void MainWindow::on_aless300_clicked()
-{
-    QString text = QString::number(ui->less300->text().toInt() + 5);
-    ui->less300->setText(text);
-}
-
-void MainWindow::on_dless300_clicked()
-{
-    QString text = QString::number(ui->less300->text().toInt() - 5);
-    ui->less300->setText(text);
 }
