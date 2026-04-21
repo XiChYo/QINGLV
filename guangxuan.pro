@@ -24,6 +24,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     boardcontrol.cpp \
     camera_worker.cpp \
+    dispatcher.cpp \
     logger.cpp \
     main.cpp \
     mainwindow.cpp \
@@ -34,6 +35,7 @@ SOURCES += \
     runtime_config.cpp \
     savelocalpic.cpp \
     tcpforrobot.cpp \
+    tracker_worker.cpp \
     updatemanager.cpp \
     uploadpictooss.cpp \
     yolo_session.cpp \
@@ -42,6 +44,7 @@ SOURCES += \
 HEADERS += \
     boardcontrol.h \
     camera_worker.h \
+    dispatcher.h \
     logger.h \
     mainwindow.h \
     library/mvs/includes/MvCameraControl.h \
@@ -53,6 +56,7 @@ HEADERS += \
     runtime_config.h \
     savelocalpic.h \
     tcpforrobot.h \
+    tracker_worker.h \
     updatemanager.h \
     uploadpictooss.h \
     valvecmd.h \

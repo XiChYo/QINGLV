@@ -110,11 +110,13 @@ MainWindow::MainWindow(QWidget *parent)
         m_cfg = loadRuntimeConfig(QStringLiteral("config.ini"));
 
         // 线程池
-        threadPool         = new QThread(this);
-        threadPool_robotA  = new QThread(this);
-        m_cameraThread     = new QThread(this);
-        m_yoloThread       = new QThread(this);
-        m_boardThread      = new QThread(this);
+        threadPool           = new QThread(this);
+        threadPool_robotA    = new QThread(this);
+        m_cameraThread       = new QThread(this);
+        m_yoloThread         = new QThread(this);
+        m_boardThread        = new QThread(this);
+        m_trackerThread      = new QThread(this);
+        m_dispatcherThread   = new QThread(this);
 
         // OSS线程
         ossThread = new uploadpictoOSS;
@@ -172,9 +174,57 @@ MainWindow::MainWindow(QWidget *parent)
                 this,         &MainWindow::updateFrame,
                 Qt::QueuedConnection);
 
-        // Yolo 结构化结果 -> UI 主线程(PR4 将改由 TrackerWorker 接)
+        // ---- TrackerWorker + Dispatcher(PR4) ----
+        m_tracker    = new TrackerWorker;
+        m_dispatcher = new Dispatcher;
+        m_tracker->moveToThread(m_trackerThread);
+        m_dispatcher->moveToThread(m_dispatcherThread);
+        connect(m_trackerThread,    &QThread::finished, m_tracker,    &QObject::deleteLater);
+        connect(m_dispatcherThread, &QThread::finished, m_dispatcher, &QObject::deleteLater);
+
+        // Yolo 结构化结果 -> Tracker
+        connect(m_yoloWorker, &YoloWorker::detectedFrameReady,
+                m_tracker,    &TrackerWorker::onFrameInferred,
+                Qt::QueuedConnection);
+        // UI 侧同一份结果做一行日志
         connect(m_yoloWorker, &YoloWorker::detectedFrameReady,
                 this,         &MainWindow::onDetectedFrame,
+                Qt::QueuedConnection);
+
+        // Tracker -> Dispatcher
+        connect(m_tracker,    &TrackerWorker::sortTaskReady,
+                m_dispatcher, &Dispatcher::onSortTask,
+                Qt::QueuedConnection);
+        // UI 侧做 SortTask 日志
+        connect(m_tracker, &TrackerWorker::sortTaskReady,
+                this,      &MainWindow::onSortTask,
+                Qt::QueuedConnection);
+
+        // 告警
+        connect(m_tracker,    &TrackerWorker::warning,
+                this, &MainWindow::onPipelineWarning, Qt::QueuedConnection);
+        connect(m_dispatcher, &Dispatcher::warning,
+                this, &MainWindow::onPipelineWarning, Qt::QueuedConnection);
+
+        // Board speed -> Tracker / Dispatcher
+        connect(m_board, &boardControl::speedSample,
+                m_tracker,    &TrackerWorker::onSpeedSample,
+                Qt::QueuedConnection);
+        connect(m_board, &boardControl::speedSample,
+                m_dispatcher, &Dispatcher::onSpeedSample,
+                Qt::QueuedConnection);
+
+        // Dispatcher -> Board
+        connect(m_dispatcher, &Dispatcher::enqueuePulses,
+                m_board,      &boardControl::onEnqueuePulses,
+                Qt::QueuedConnection);
+        connect(m_dispatcher, &Dispatcher::cancelPulses,
+                m_board,      &boardControl::onCancelPulses,
+                Qt::QueuedConnection);
+
+        // Dispatcher -> UI(Arm stub)
+        connect(m_dispatcher, &Dispatcher::armStubDispatched,
+                this, &MainWindow::onArmStubDispatched,
                 Qt::QueuedConnection);
 
         // 反压:Yolo 处理完 -> Camera 解锁下一帧
@@ -206,9 +256,16 @@ MainWindow::MainWindow(QWidget *parent)
         m_boardThread->start();
         m_cameraThread->start();
         m_yoloThread->start();
+        m_trackerThread->start();
+        m_dispatcherThread->start();
 
-        // Session 初始化:PR3 先统一在构造时触发,PR5 将并入 Session 状态机。
+        // Session 初始化:PR5 将并入 Session 状态机。
+        // 启动顺序:先 Board/Tracker/Dispatcher(消费者就位),再 Yolo,最后 Camera(生产者)。
         QMetaObject::invokeMethod(m_board, "onSessionStart", Qt::QueuedConnection,
+                                  Q_ARG(RuntimeConfig, m_cfg));
+        QMetaObject::invokeMethod(m_tracker, "onSessionStart", Qt::QueuedConnection,
+                                  Q_ARG(RuntimeConfig, m_cfg));
+        QMetaObject::invokeMethod(m_dispatcher, "onSessionStart", Qt::QueuedConnection,
                                   Q_ARG(RuntimeConfig, m_cfg));
         QMetaObject::invokeMethod(m_yoloWorker, "sessionStart", Qt::QueuedConnection,
                                   Q_ARG(RuntimeConfig, m_cfg));
@@ -223,13 +280,20 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    // 停止新管道:必须在工作线程 alive 时,阻塞式调 sessionStop,
+    // 停止新管道:按 生产者 → 消费者 → 执行器 的顺序,
+    // 且每步 BlockingQueuedConnection 等目标线程确认干净,
     // 才能让相机/RKNN/串口资源在 QThread 退出事件循环前释放干净。
     if (m_cameraWorker && m_cameraThread && m_cameraThread->isRunning()) {
         QMetaObject::invokeMethod(m_cameraWorker, "sessionStop", Qt::BlockingQueuedConnection);
     }
     if (m_yoloWorker && m_yoloThread && m_yoloThread->isRunning()) {
         QMetaObject::invokeMethod(m_yoloWorker, "sessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_tracker && m_trackerThread && m_trackerThread->isRunning()) {
+        QMetaObject::invokeMethod(m_tracker, "onSessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_dispatcher && m_dispatcherThread && m_dispatcherThread->isRunning()) {
+        QMetaObject::invokeMethod(m_dispatcher, "onSessionStop", Qt::BlockingQueuedConnection);
     }
     if (m_board && m_boardThread && m_boardThread->isRunning()) {
         QMetaObject::invokeMethod(m_board, "onSessionStop", Qt::BlockingQueuedConnection);
@@ -244,6 +308,8 @@ MainWindow::~MainWindow()
     };
     stopPool(m_cameraThread);
     stopPool(m_yoloThread);
+    stopPool(m_trackerThread);
+    stopPool(m_dispatcherThread);
     stopPool(m_boardThread);
     stopPool(threadPool);
     stopPool(threadPool_robotA);
@@ -479,9 +545,33 @@ void MainWindow::onDetectedFrame(const DetectedFrame& frame)
 
 void MainWindow::onBoardSpeedSample(const SpeedSample& s)
 {
-    // PR3 占位:PR4 改由 TrackerWorker/Dispatcher 订阅。
-    // 注:speedMmPerMs 与 m/s 在数值上相等(mm/ms == m/s),这里仅做日志占位。
+    // 主要消费者已经是 TrackerWorker / Dispatcher,这里仅留 UI 占位。
+    // speedMmPerMs 与 m/s 在数值上相等(mm/ms == m/s)。
     (void)s;
+}
+
+void MainWindow::onSortTask(const SortTask& task)
+{
+    LOG_INFO(QString("SortTask: trackId=%1 cls=%2 target=%3 areaMm2=%4 speed=%5mm/ms")
+             .arg(task.trackId)
+             .arg(task.classId)
+             .arg(static_cast<int>(task.target))
+             .arg(task.areaMm2, 0, 'f', 1)
+             .arg(task.speedMmPerMsAtTrigger, 0, 'f', 4));
+}
+
+void MainWindow::onArmStubDispatched(int trackId, int classId,
+                                     float aX, float aY, float bX, float bY)
+{
+    LOG_INFO(QString("ArmStub dispatched: trackId=%1 cls=%2 armA=(%3,%4) armB=(%5,%6)")
+             .arg(trackId).arg(classId)
+             .arg(aX, 0, 'f', 1).arg(aY, 0, 'f', 1)
+             .arg(bX, 0, 'f', 1).arg(bY, 0, 'f', 1));
+}
+
+void MainWindow::onPipelineWarning(const QString& msg)
+{
+    LOG_ERROR(QString("Pipeline warning: %1").arg(msg));
 }
 
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)

@@ -22,6 +22,8 @@
 #include "runtime_config.h"
 #include "boardcontrol.h"
 #include "pipeline_types.h"
+#include "tracker_worker.h"
+#include "dispatcher.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -57,8 +59,18 @@ private slots:
     // 接 YoloWorker::detectedFrameReady(PR2 暂仅做一行日志,PR4 接 Tracker)
     void onDetectedFrame(const DetectedFrame& frame);
 
-    // 接 boardControl::speedSample(PR3,PR4 将改由 TrackerWorker 订阅)
+    // 接 boardControl::speedSample(UI 侧日志占位,真正消费者是 Tracker/Dispatcher)
     void onBoardSpeedSample(const SpeedSample& s);
+
+    // Dispatcher -> MainWindow:Arm stub 派发日志
+    void onArmStubDispatched(int trackId, int classId,
+                             float aX, float aY, float bX, float bY);
+
+    // Tracker -> MainWindow:PR4 做一行日志占位,PR5 可考虑接到 UI 计数器
+    void onSortTask(const SortTask& task);
+
+    // Dispatcher / Tracker -> MainWindow:告警
+    void onPipelineWarning(const QString& msg);
 
     void uploadOSSPath(const QString& filePath, const int ImgClass);
 
@@ -104,6 +116,12 @@ private:
     // ---- BoardWorker(PR3,仍用原 boardControl 类扩展) ----
     boardControl* m_board         = nullptr;
     QThread*      m_boardThread   = nullptr;
+
+    // ---- TrackerWorker + Dispatcher(PR4) ----
+    TrackerWorker* m_tracker        = nullptr;
+    Dispatcher*    m_dispatcher     = nullptr;
+    QThread*       m_trackerThread  = nullptr;
+    QThread*       m_dispatcherThread = nullptr;
 
     // ---- 历史 worker(保留) ----
     uploadpictoOSS* ossThread;
