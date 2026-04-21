@@ -1,16 +1,22 @@
 #include "boardcontrol.h"
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <termios.h>
-#include <sys/select.h>
-#include <string.h>
 #include <QDebug>
-#include <QThread>
 #include <QElapsedTimer>
-#include <QTimer>
+#include <QMutexLocker>
 #include <QThread>
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/select.h>
+#include <termios.h>
+#include <unistd.h>
 
+#include "logger.h"
+#include "pipeline_clock.h"
+
+// ============================================================================
+// ctor / dtor
+// ============================================================================
 boardControl::boardControl(QObject *parent)
     : QObject(parent)
 {
@@ -21,54 +27,42 @@ boardControl::~boardControl()
     closeSerial();
 }
 
+// ============================================================================
 // 串口底层
-
+// ============================================================================
 bool boardControl::openSerial()
 {
     int jud = 0;
-    while(1)
-    {
-    m_fd = ::open(m_dev.toLocal8Bit().data(),
-                  O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (m_fd < 0 && jud == 0) {
+    while (true) {
+        m_fd = ::open(m_dev.toLocal8Bit().data(),
+                      O_RDWR | O_NOCTTY | O_NONBLOCK);
+        if (m_fd < 0 && jud == 0) {
             jud++;
             m_dev = "/dev/ttyUSB1";
             continue;
+        }
+        if (m_fd < 0 && jud == 1) {
+            LOG_ERROR("boardControl: open serial failed for ttyUSB0/ttyUSB1");
+            emit errorOccured("open serial failed");
+            return false;
+        }
+        break;
     }
-    if(m_fd < 0 && jud == 1)
-    {
-        qDebug()<<"open serial failed";
-        emit errorOccured("open serial failed");
-        return false;
-    }
-    break;
-    }
-//    qDebug()<<"open serial succeed";
 
     termios tty{};
     tcgetattr(m_fd, &tty);
-
     cfmakeraw(&tty);
-
     cfsetispeed(&tty, B115200);
     cfsetospeed(&tty, B115200);
-
     tty.c_cflag |= (CLOCAL | CREAD);
     tty.c_cflag &= ~PARENB;
     tty.c_cflag &= ~CSTOPB;
     tty.c_cflag &= ~CSIZE;
-
-//    tty.c_cflag &= ~CRTSCTS;
-
     tty.c_cflag |= CS8;
-
     tty.c_cc[VMIN]  = 0;
     tty.c_cc[VTIME] = 0;
-
     tcflush(m_fd, TCIOFLUSH);
     tcsetattr(m_fd, TCSANOW, &tty);
-
-
     return true;
 }
 
@@ -80,352 +74,343 @@ void boardControl::closeSerial()
     }
 }
 
-bool boardControl::writeFrame(const QByteArray& frame, int speedOrjet)
+bool boardControl::writeFrame(const QByteArray& frame)
 {
-    if (speedRead == false && speedOrjet == 3){
-        return false;
-    }
+    if (m_fd < 0) return false;
 
-    if (m_fd < 0)
-    {
-        qDebug()<<"writeFrame false";
-        return false;
-    }
-    m_writeMutex.lock();
-//    tcdrain(m_fd);
-    ssize_t ret = ::write(m_fd, frame.constData(), frame.size());
-//    tcdrain(m_fd);
-//    QThread::msleep(500);
-//    ::write(m_fd1, frame.constData(), frame.size());
-//    ::write(m_fd, frame.constData(), frame.size());
+    // 单一 busMutex:粒度=一帧,不跨帧持锁(替代原 m_writeMutex+m_serialMutex)。
+    QMutexLocker locker(&m_busMutex);
+    const ssize_t ret = ::write(m_fd, frame.constData(), frame.size());
     tcdrain(m_fd);
-    m_writeMutex.unlock();
-
-    return ret;
+    return ret == frame.size();
 }
 
 bool boardControl::readFrame(QByteArray& frame, int timeoutMs)
 {
-    const QByteArray head("\xAA\x55\x11\x05\x03\x0A", 6);
-    const QByteArray tail("\x55\xAA", 2);
-    const int frameLen = 11;
+    static const QByteArray kHead("\xAA\x55\x11\x05\x03\x0A", 6);
+    static const QByteArray kTail("\x55\xAA", 2);
+    static constexpr int kFrameLen = 11;
 
     QElapsedTimer timer;
     timer.start();
-
-    while (timer.elapsed() < timeoutMs)
-    {
-        // select 等待
+    while (timer.elapsed() < timeoutMs) {
         fd_set rfds;
         FD_ZERO(&rfds);
         FD_SET(m_fd, &rfds);
-
         timeval tv{};
         tv.tv_sec  = 0;
-        tv.tv_usec = 20 * 1000; // 20ms 小轮询
-
-        int ret = select(m_fd + 1, &rfds, nullptr, nullptr, &tv);
-        if (ret > 0)
-        {
+        tv.tv_usec = 20 * 1000;
+        int sel = select(m_fd + 1, &rfds, nullptr, nullptr, &tv);
+        if (sel > 0) {
             char buf[64];
             int n = ::read(m_fd, buf, sizeof(buf));
-            if (n > 0)
-            {
+            if (n > 0) {
                 m_rxBuffer.append(buf, n);
-            }else if (errno != EAGAIN)
-            {
-                qDebug()<<"read error"<<strerror(errno);
+            } else if (errno != EAGAIN) {
+                LOG_ERROR(QString("boardControl::readFrame read error %1")
+                          .arg(std::strerror(errno)));
             }
-
         }
 
-        // 尝试拆帧
-        while (true)
-        {
-            int headPos = m_rxBuffer.indexOf(head);
-            if (headPos < 0)
-            {
-                // 没找到帧头，防止缓存无限长
-                if (m_rxBuffer.size() > 64)
-                    m_rxBuffer.clear();
+        while (true) {
+            int headPos = m_rxBuffer.indexOf(kHead);
+            if (headPos < 0) {
+                if (m_rxBuffer.size() > 64) m_rxBuffer.clear();
                 break;
             }
-
-            // 数据不够一帧
-            if (m_rxBuffer.size() < headPos + frameLen)
-                break;
-
-            QByteArray oneFrame = m_rxBuffer.mid(headPos, frameLen);
-
-            // 校验帧尾
-            if (!oneFrame.endsWith(tail))
-            {
-                // 错位 → 丢1字节继续找
+            if (m_rxBuffer.size() < headPos + kFrameLen) break;
+            QByteArray one = m_rxBuffer.mid(headPos, kFrameLen);
+            if (!one.endsWith(kTail)) {
                 m_rxBuffer.remove(0, headPos + 1);
                 continue;
             }
-
-            // ✅ 成功拿到完整帧
-            frame = oneFrame;
-
-            // 移除已处理数据
-            m_rxBuffer.remove(0, headPos + frameLen);
+            frame = one;
+            m_rxBuffer.remove(0, headPos + kFrameLen);
             return true;
         }
     }
-    return false; // 超时
+    return false;
 }
 
+// ============================================================================
+// 初始化 / Session
+// ============================================================================
 void boardControl::initSerial()
 {
-    if (!openSerial())
-    {
-        qDebug()<<"openSerial failed";
+    if (!openSerial()) {
+        LOG_ERROR("boardControl: initSerial failed");
         return;
     }
-//    qDebug()<<"openSerial succeed";
 
-    m_speedTimer = new QTimer(this);
-    connect(m_speedTimer, &QTimer::timeout,
-            this, &boardControl::requestEncoderSpeed);
+    m_valveTick = new QTimer(this);
+    m_valveTick->setTimerType(Qt::PreciseTimer);
+    connect(m_valveTick, &QTimer::timeout, this, &boardControl::onValveTick);
 
-    m_speedTimer->start(500);
+    m_encoderTick = new QTimer(this);
+    connect(m_encoderTick, &QTimer::timeout, this, &boardControl::onEncoderTick);
+    // 启动即开始轮询编码器(与 session 解耦,便于 UI 侧速度显示始终生效)。
+    m_encoderTick->start(m_encoderRequestIntervalMs);
 }
 
-void boardControl::singleBoardControl(QString order)
+void boardControl::onSessionStart(const RuntimeConfig& cfg)
 {
-    qDebug() << "speedRead:false";
-    QMutexLocker locker(&m_serialMutex);
-    speedRead = false;
-    m_speedTimer->stop();
-    qDebug() << "order:" << order;
+    m_valveTickIntervalMs      = std::max(1, cfg.tickIntervalMs);
+    m_encoderRequestIntervalMs = std::max(50, cfg.encoderRequestIntervalMs);
+    m_encoderPulseToMm         = cfg.encoderPulseToMm;
 
-    QByteArray field = QByteArray::fromHex(order.toLatin1());
-    if (field.size() != 3) {
-        qWarning() << "order format error!";
-        return;
+    if (m_encoderTick) {
+        if (m_encoderTick->interval() != m_encoderRequestIntervalMs) {
+            m_encoderTick->start(m_encoderRequestIntervalMs);
+        }
     }
-
-    // 解析喷阀号（第一个字节）
-    int valveId = static_cast<quint8>(field[0]);
-
-    // 忙碌检测
-    if (m_valveBusySet.contains(valveId))
-    {
-        qDebug() << "valve" << valveId << "is busy, drop command";
-        return;
+    if (m_valveTick) {
+        m_valveTick->start(m_valveTickIntervalMs);
     }
-
-    // 标记忙碌
-    m_valveBusySet.insert(valveId);
-
-    //  发送开启帧
-    QByteArray openFrame = buildControlFrame(field);
-    writeFrame(openFrame, 1);
-
-    // 0.5 秒后发送关闭
-    QByteArray closeField = field;
-    closeField[2] = 0x00;  // 最后一位改为关闭
-
-    QByteArray closeFrame = buildControlFrame(closeField);
-
-    QThread::msleep(50);
-
-    writeFrame(closeFrame, 1);
-    // 释放忙碌（极其关键）
-    m_valveBusySet.remove(valveId);
-
-    qDebug() << "valve" << valveId << "released";
-
-    speedRead = true;
-    m_speedTimer->start();
-    qDebug() << "speedRead:true";
+    m_sessionActive = true;
+    m_pending.clear();
+    m_lastEncoderPulse = -1;
+    m_lastEncoderTMs   = -1;
+    LOG_INFO(QString("boardControl sessionStart tick=%1ms enc=%2ms pulse_to_mm=%3")
+             .arg(m_valveTickIntervalMs)
+             .arg(m_encoderRequestIntervalMs)
+             .arg(m_encoderPulseToMm));
 }
 
+void boardControl::onSessionStop()
+{
+    m_sessionActive = false;
+    if (m_valveTick) m_valveTick->stop();
+    // 强制关闭所有已开未关的阀,避免漏卡关阀。
+    QVector<ValvePulse> forceClose;
+    for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
+        for (auto& slot : it.value()) {
+            if (slot.sentOpen && !slot.sentClose) {
+                forceClose.push_back(slot.pulse);
+                slot.sentClose = true;
+            }
+        }
+    }
+    for (const auto& p : forceClose) {
+        writeFrame(buildPulseCloseFrame(p));
+    }
+    m_pending.clear();
+}
+
+void boardControl::onEnqueuePulses(const QVector<ValvePulse>& pulses, int trackId)
+{
+    if (!m_sessionActive) return;
+    QVector<PulseSlot> slots;
+    slots.reserve(pulses.size());
+    for (const auto& p : pulses) {
+        slots.push_back({p, false, false});
+    }
+    m_pending[trackId] = std::move(slots);
+}
+
+void boardControl::onCancelPulses(int trackId)
+{
+    auto it = m_pending.find(trackId);
+    if (it == m_pending.end()) return;
+    // 保留已发 open 未发 close 的,避免漏关;剩余未 open 的丢弃。
+    QVector<PulseSlot> keep;
+    for (const auto& slot : it.value()) {
+        if (slot.sentOpen && !slot.sentClose) {
+            keep.push_back(slot);
+        }
+    }
+    if (keep.isEmpty()) {
+        m_pending.erase(it);
+    } else {
+        it.value() = std::move(keep);
+    }
+}
+
+// ============================================================================
+// Tick 处理
+// ============================================================================
+void boardControl::onValveTick()
+{
+    if (!m_sessionActive) return;
+    const qint64 now = pipeline::nowMs();
+
+    auto it = m_pending.begin();
+    while (it != m_pending.end()) {
+        auto& slots = it.value();
+        bool allClosed = true;
+        for (auto& slot : slots) {
+            if (!slot.sentOpen && slot.pulse.tOpenMs <= now) {
+                writeFrame(buildPulseOpenFrame(slot.pulse));
+                slot.sentOpen = true;
+            }
+            if (slot.sentOpen && !slot.sentClose && slot.pulse.tCloseMs <= now) {
+                writeFrame(buildPulseCloseFrame(slot.pulse));
+                slot.sentClose = true;
+            }
+            if (!slot.sentClose) allClosed = false;
+        }
+        if (allClosed) it = m_pending.erase(it);
+        else           ++it;
+    }
+}
+
+void boardControl::onEncoderTick()
+{
+    requestEncoderSpeed();
+}
+
+// ============================================================================
+// 帧构造:阀脉冲
+// ============================================================================
+QByteArray boardControl::buildPulseOpenFrame(const ValvePulse& p)
+{
+    // 协议:b6 = boardId(1..8);b7 = 开启通道数;b8/b9 = 两字节通道位图
+    const quint16 mask    = p.channelMask;
+    const quint8  b8      = (quint8)(mask & 0xFF);
+    const quint8  b9      = (quint8)((mask >> 8) & 0xFF);
+    const quint8  bitCnt  = countBits(b8) + countBits(b9);
+    return buildBatchFrameCore(p.boardId, bitCnt, b8, b9);
+}
+
+QByteArray boardControl::buildPulseCloseFrame(const ValvePulse& p)
+{
+    // 关阀:b7 固定 0x09(协议约定),b8/b9 全 0
+    return buildBatchFrameCore(p.boardId, 0x09, 0x00, 0x00);
+}
+
+// ============================================================================
+// 帧构造:legacy single/batch
+// ============================================================================
 QByteArray boardControl::buildControlFrame(const QByteArray& field)
 {
-    // 固定头
     QByteArray frame;
     frame.append(char(0xAA));
     frame.append(char(0x55));
-
-    // 固定字段
     frame.append(char(0x11));
     frame.append(char(0x05));
     frame.append(char(0x01));
-
-    // 可变三字节
     frame.append(field);
 
-    // 计算校验
-    quint8 sum = 0;
-    sum += 0x11;
-    sum += 0x05;
-    sum += 0x01;
-    sum += static_cast<quint8>(field[0]);
-    sum += static_cast<quint8>(field[1]);
-    sum += static_cast<quint8>(field[2]);
-
-    quint8 checksum = sum & 0xFF;
-    frame.append(char(checksum));
-
-    // 帧尾
+    quint8 sum = 0x11 + 0x05 + 0x01
+               + static_cast<quint8>(field[0])
+               + static_cast<quint8>(field[1])
+               + static_cast<quint8>(field[2]);
+    frame.append(char(sum & 0xFF));
     frame.append(char(0x55));
     frame.append(char(0xAA));
-
-//    qDebug() << "send:" << frame.toHex(' ').toUpper();
-
     return frame;
-}
-
-
-void boardControl::batchBoardControl(QString order)
-{
-    if (busy) return;
-    busy = true;
-    qDebug() << "speedRead:false";
-    QMutexLocker locker(&m_serialMutex);
-    speedRead = false;
-    m_speedTimer->stop();
-
-    QByteArray field = QByteArray::fromHex(order.toLatin1());
-    if (field.size() != 3) {
-        qWarning() << "order format error!";
-        return;
-    }
-
-    // 解析喷阀号（第一个字节）
-    int valveId = static_cast<quint8>(field[0]);
-
-    // 忙碌检测
-    if (m_valveBusySet.contains(valveId))
-    {
-        qDebug() << "valve" << valveId << "is busy, drop command";
-        return;
-    }
-
-    // 标记忙碌
-    m_valveBusySet.insert(valveId);
-
-    QByteArray openFrame = buildBatchOpenFrame(field);
-//    qDebug()<<"openframe:"<<openFrame.toHex(' ').toUpper();
-
-    writeFrame(openFrame, 2);
-
-    QByteArray closeFrame = buildBatchCloseFrame(field);
-//    qDebug()<<"closeFrame:"<<closeFrame.toHex(' ').toUpper();
-
-    QThread::msleep(50);
-
-
-    writeFrame(closeFrame, 2);
-    m_valveBusySet.remove(valveId);
-
-    speedRead = true;
-    busy = false;
-    m_speedTimer->start();
-    qDebug() << "speedRead:true";
 }
 
 QByteArray boardControl::buildBatchOpenFrame(const QByteArray& field)
 {
-    quint8 b6 = static_cast<quint8>(field[0]);
-    quint8 b8 = static_cast<quint8>(field[1]);
-    quint8 b9 = static_cast<quint8>(field[2]);
-
-    // 第7位 = bit1数量
-    quint8 bitCount = countBits(b8) + countBits(b9);
-
-    return buildBatchFrameCore(b6, bitCount, b8, b9);
+    const quint8 b6 = static_cast<quint8>(field[0]);
+    const quint8 b8 = static_cast<quint8>(field[1]);
+    const quint8 b9 = static_cast<quint8>(field[2]);
+    const quint8 bitCnt = countBits(b8) + countBits(b9);
+    return buildBatchFrameCore(b6, bitCnt, b8, b9);
 }
 
 QByteArray boardControl::buildBatchCloseFrame(const QByteArray& field)
 {
-    quint8 b6 = static_cast<quint8>(field[0]);
-
-    quint8 b7 = 0x09; //  固定 1111b
-    quint8 b8 = 0x00;
-    quint8 b9 = 0x00;
-
-    return buildBatchFrameCore(b6, b7, b8, b9);
+    const quint8 b6 = static_cast<quint8>(field[0]);
+    return buildBatchFrameCore(b6, 0x09, 0x00, 0x00);
 }
 
-QByteArray boardControl::buildBatchFrameCore(
-    quint8 b6,
-    quint8 b7,
-    quint8 b8,
-    quint8 b9)
+QByteArray boardControl::buildBatchFrameCore(quint8 b6, quint8 b7, quint8 b8, quint8 b9)
 {
     QByteArray frame;
-
-    // 帧头
     frame.append(char(0xAA));
     frame.append(char(0x55));
-
-    // 固定
     frame.append(char(0x11));
     frame.append(char(0x06));
     frame.append(char(0x02));
-
-    // 数据区
     frame.append(char(b6));
     frame.append(char(b7));
     frame.append(char(b8));
     frame.append(char(b9));
-
-    // 校验
-    quint8 sum = 0;
-    sum += 0x11;
-    sum += 0x06;
-    sum += 0x02;
-    sum += b6;
-    sum += b7;
-    sum += b8;
-    sum += b9;
-
-    quint8 checksum = sum & 0xFF;
-    frame.append(char(checksum));
-
-    // 帧尾
+    const quint8 sum = 0x11 + 0x06 + 0x02 + b6 + b7 + b8 + b9;
+    frame.append(char(sum & 0xFF));
     frame.append(char(0x55));
     frame.append(char(0xAA));
-
-//    qDebug() << "batch send:" << frame.toHex(' ').toUpper();
-
     return frame;
 }
 
 quint8 boardControl::countBits(quint8 v)
 {
     quint8 cnt = 0;
-    while (v) {
-        cnt += (v & 1);
-        v >>= 1;
-    }
+    while (v) { cnt += (v & 1); v >>= 1; }
     return cnt;
 }
 
+// ============================================================================
+// Legacy 单板/批量控制(UI Action 菜单触发)
+// ============================================================================
+void boardControl::singleBoardControl(QString order)
+{
+    QByteArray field = QByteArray::fromHex(order.toLatin1());
+    if (field.size() != 3) {
+        LOG_ERROR(QString("singleBoardControl format error: %1").arg(order));
+        return;
+    }
+    writeFrame(buildControlFrame(field));
+
+    // 50ms 后手动发关阀帧。原实现用 QThread::msleep 阻塞线程,现改为 QTimer 单触。
+    QByteArray closeField = field;
+    closeField[2] = 0x00;
+    QTimer::singleShot(50, this, [this, closeField]() {
+        writeFrame(buildControlFrame(closeField));
+    });
+}
+
+void boardControl::batchBoardControl(QString order)
+{
+    QByteArray field = QByteArray::fromHex(order.toLatin1());
+    if (field.size() != 3) {
+        LOG_ERROR(QString("batchBoardControl format error: %1").arg(order));
+        return;
+    }
+    writeFrame(buildBatchOpenFrame(field));
+    QTimer::singleShot(50, this, [this, field]() {
+        writeFrame(buildBatchCloseFrame(field));
+    });
+}
+
+// ============================================================================
+// 编码器请求
+// ============================================================================
 void boardControl::requestEncoderSpeed()
 {
-
-    QMutexLocker locker(&m_serialMutex);
-    if(!speedRead) return;
-
-    QByteArray cmd = QByteArray::fromHex(
-        "AA 55 11 03 03 0A 21 55 AA");
-    writeFrame(cmd, 3);
+    static const QByteArray kEncReq =
+        QByteArray::fromHex("AA 55 11 03 03 0A 21 55 AA");
+    writeFrame(kEncReq);
 
     QByteArray rx;
+    if (!readFrame(rx, 50)) return;
 
-    if (readFrame(rx, 50)) {
-        emit encoderSpeedReceived(rx);
-    }
+    emit encoderSpeedReceived(rx);
 
+    // ---- PR3:解析为 SpeedSample ----
+    if (rx.size() < 8) return;
+    // 协议:第 6、7 字节为编码器脉冲高/低字节。此处是"转速样本"而非"累计脉冲",
+    // 所以直接把 raw 值乘 encoder_pulse_to_mm 得到 mm/采样周期,再除以时间差拿 mm/ms。
+    const quint16 raw =
+        (static_cast<quint8>(rx[6]) << 8) |
+         static_cast<quint8>(rx[7]);
+    const qint64 tNow = pipeline::nowMs();
+
+    SpeedSample s;
+    s.tMs           = tNow;
+    s.valid         = true;
+    // 简单估计:raw * pulse_to_mm 视为当前速度下瞬时 mm/采样(采样周期 ~ encoder_request_interval_ms)。
+    // 为了给上层一个单位统一的 mm/ms,除以采样周期。若采样间隔波动较大,下游可自己做平滑。
+    const float samplingMs = static_cast<float>(std::max(1, m_encoderRequestIntervalMs));
+    s.speedMmPerMs  = (raw * m_encoderPulseToMm) / samplingMs;
+    emit speedSample(s);
+
+    m_lastEncoderPulse = raw;
+    m_lastEncoderTMs   = tNow;
 }
 
 void boardControl::stopWork()
 {
     closeSerial();
 }
-
-

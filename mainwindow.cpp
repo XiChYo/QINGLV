@@ -114,28 +114,33 @@ MainWindow::MainWindow(QWidget *parent)
         threadPool_robotA  = new QThread(this);
         m_cameraThread     = new QThread(this);
         m_yoloThread       = new QThread(this);
+        m_boardThread      = new QThread(this);
 
         // OSS线程
         ossThread = new uploadpictoOSS;
         ossThread->moveToThread(threadPool);
 
-        // boardcontrol
-        boardControl* ctrl = new boardControl;
-        ctrl->moveToThread(threadPool);
-        connect(threadPool, &QThread::started,
-                ctrl, &boardControl::initSerial);
+        // ---- BoardWorker:独立线程,串口 IO + 阀/编码器 tick ----
+        m_board = new boardControl;
+        m_board->moveToThread(m_boardThread);
+        connect(m_boardThread, &QThread::started,
+                m_board, &boardControl::initSerial);
+        connect(m_boardThread, &QThread::finished,
+                m_board, &QObject::deleteLater);
 
         connect(this, &MainWindow::singleControl,
-                ctrl, &boardControl::singleBoardControl);
-
+                m_board, &boardControl::singleBoardControl);
         connect(this, &MainWindow::batchControl,
-                ctrl, &boardControl::batchBoardControl);
-
+                m_board, &boardControl::batchBoardControl);
         connect(this, &MainWindow::requestEncoder,
-                ctrl, &boardControl::requestEncoderSpeed);
+                m_board, &boardControl::requestEncoderSpeed);
 
-        connect(ctrl, &boardControl::encoderSpeedReceived,
+        // Raw 帧仍上送给 MainWindow::onEncoderSpeed 更新 UI speed label。
+        connect(m_board, &boardControl::encoderSpeedReceived,
                 this, &MainWindow::onEncoderSpeed);
+        // 解析后的 SpeedSample 给后续 Tracker/Dispatcher;PR3 仅在 UI 落日志。
+        connect(m_board, &boardControl::speedSample,
+                this, &MainWindow::onBoardSpeedSample);
 
         // 保存本地文件线程
         savelocalpicThread = new saveLocalpic;
@@ -198,13 +203,15 @@ MainWindow::MainWindow(QWidget *parent)
         // 线程池中的线程启动
         threadPool->start();
         threadPool_robotA->start();
+        m_boardThread->start();
         m_cameraThread->start();
         m_yoloThread->start();
 
-        // YoloWorker::sessionStart 在 yolo 线程里执行(昂贵的 rknn_init)
+        // Session 初始化:PR3 先统一在构造时触发,PR5 将并入 Session 状态机。
+        QMetaObject::invokeMethod(m_board, "onSessionStart", Qt::QueuedConnection,
+                                  Q_ARG(RuntimeConfig, m_cfg));
         QMetaObject::invokeMethod(m_yoloWorker, "sessionStart", Qt::QueuedConnection,
                                   Q_ARG(RuntimeConfig, m_cfg));
-        // CameraWorker::sessionStart 在相机线程里执行
         QMetaObject::invokeMethod(m_cameraWorker, "sessionStart", Qt::QueuedConnection,
                                   Q_ARG(RuntimeConfig, m_cfg));
     }catch(std::exception& e)
@@ -217,12 +224,15 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     // 停止新管道:必须在工作线程 alive 时,阻塞式调 sessionStop,
-    // 才能让相机/RKNN 资源在 QThread 退出事件循环前释放干净。
+    // 才能让相机/RKNN/串口资源在 QThread 退出事件循环前释放干净。
     if (m_cameraWorker && m_cameraThread && m_cameraThread->isRunning()) {
         QMetaObject::invokeMethod(m_cameraWorker, "sessionStop", Qt::BlockingQueuedConnection);
     }
     if (m_yoloWorker && m_yoloThread && m_yoloThread->isRunning()) {
         QMetaObject::invokeMethod(m_yoloWorker, "sessionStop", Qt::BlockingQueuedConnection);
+    }
+    if (m_board && m_boardThread && m_boardThread->isRunning()) {
+        QMetaObject::invokeMethod(m_board, "onSessionStop", Qt::BlockingQueuedConnection);
     }
 
     auto stopPool = [](QThread*& pool) {
@@ -234,6 +244,7 @@ MainWindow::~MainWindow()
     };
     stopPool(m_cameraThread);
     stopPool(m_yoloThread);
+    stopPool(m_boardThread);
     stopPool(threadPool);
     stopPool(threadPool_robotA);
 
@@ -464,6 +475,13 @@ void MainWindow::onDetectedFrame(const DetectedFrame& frame)
              .arg(frame.objs.size())
              .arg(frame.tCaptureMs)
              .arg(frame.tInferDoneMs));
+}
+
+void MainWindow::onBoardSpeedSample(const SpeedSample& s)
+{
+    // PR3 占位:PR4 改由 TrackerWorker/Dispatcher 订阅。
+    // 注:speedMmPerMs 与 m/s 在数值上相等(mm/ms == m/s),这里仅做日志占位。
+    (void)s;
 }
 
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)

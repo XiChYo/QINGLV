@@ -1,63 +1,114 @@
 #ifndef BOARDCONTROL_H
 #define BOARDCONTROL_H
 
-#include <QObject>
+// ============================================================================
+// boardControl(兼 BoardWorker,见 docs/design.md §3.4)
+//
+// 职责:
+//   1. 打开 /dev/ttyUSB0(失败尝试 /dev/ttyUSB1),115200 8N1,RS485 单线总线
+//   2. 周期性发编码器请求帧并解析返回,以 SpeedSample 上报(PR3 新增)
+//   3. 接收 Dispatcher 下发的 ValvePulse 时间轴,5 ms 轮询按 tOpenMs/tCloseMs
+//      触发开/关阀帧(PR3 新增)
+//   4. 保留原 singleBoardControl/batchBoardControl 两条 legacy 通道供 Qt Action
+//      菜单触发(PR5 才会决定去留),但它们经由同一把 m_busMutex。
+//
+// 并发/时序保证:
+//   - 单一 m_busMutex 保护所有串口写入;粒度=单帧,不跨帧持锁。
+//   - 阀脉冲和编码器请求在同一 QThread 事件循环中串行执行,QTimer 即可。
+// ============================================================================
+
 #include <QByteArray>
-#include <QTimer>
+#include <QMap>
 #include <QMutex>
-#include <QtConcurrent>
-#include <QMetaObject>
+#include <QObject>
 #include <QSet>
+#include <QTimer>
+#include <QVector>
+
+#include "pipeline_types.h"
+#include "runtime_config.h"
 
 class boardControl : public QObject
 {
     Q_OBJECT
 public:
     explicit boardControl(QObject *parent = nullptr);
-    ~boardControl();
+    ~boardControl() override;
 
 public slots:
-    void initSerial();                 // 在线程 started 时调用
-    void singleBoardControl(QString order);          // 单板控制
-    void batchBoardControl(QString order);           // 子板批量控制
-    void requestEncoderSpeed();         // 请求编码器
-    void stopWork();                    // 停止并关闭串口
+    // 构造后、线程 started 时调用;打开串口并启动 encoderTick。
+    void initSerial();
+
+    // ---- 新管道接口(PR3) ----
+    void onSessionStart(const RuntimeConfig& cfg);
+    void onSessionStop();
+    void onEnqueuePulses(const QVector<ValvePulse>& pulses, int trackId);
+    void onCancelPulses(int trackId);
+
+    // ---- Legacy(PR5 再决定去留) ----
+    void singleBoardControl(QString order);
+    void batchBoardControl(QString order);
+    void requestEncoderSpeed();
+    void stopWork();
 
 signals:
+    // Raw 帧(保留给 MainWindow::onEncoderSpeed 旧路径)。
     void encoderSpeedReceived(QByteArray frame);
+    // PR3 新增:解析后的速度样本,供 Tracker / Dispatcher 使用。
+    void speedSample(const SpeedSample& s);
     void errorOccured(QString msg);
 
-private:
-    bool busy = false;
+private slots:
+    // 阀轮询。pipeline.tick_interval_ms 缺省 5 ms。
+    void onValveTick();
+    // 编码器轮询。belt.encoder_request_interval_ms 缺省 500 ms。
+    void onEncoderTick();
 
+private:
+    // ---- 串口底层 ----
     bool openSerial();
     void closeSerial();
-    bool writeFrame(const QByteArray& frame, int speedOrjet);
+    bool writeFrame(const QByteArray& frame);
     bool readFrame(QByteArray& frame, int timeoutMs);
 
-    QByteArray buildSingleControlFrame(const QByteArray& field);
+    // ---- 帧构造 ----
     QByteArray buildControlFrame(const QByteArray& field);
     QByteArray buildBatchOpenFrame(const QByteArray& field);
     QByteArray buildBatchCloseFrame(const QByteArray& field);
-    QByteArray buildBatchFrameCore(quint8, quint8, quint8, quint8);
-    quint8 countBits(quint8 v);
+    QByteArray buildBatchFrameCore(quint8 b6, quint8 b7, quint8 b8, quint8 b9);
+    static quint8 countBits(quint8 v);
 
-    bool speedRead = true;
+    // ---- Valve pulse 轨道内部记录 ----
+    struct PulseSlot {
+        ValvePulse pulse;
+        bool       sentOpen  = false;
+        bool       sentClose = false;
+    };
 
-    QSet<int> m_valveBusySet;   // 正在工作的喷阀集合
+    QByteArray buildPulseOpenFrame(const ValvePulse& p);
+    QByteArray buildPulseCloseFrame(const ValvePulse& p);
 
-private:
-    QMutex m_serialMutex;
+    // ---- 成员 ----
+    QMutex                           m_busMutex;      // 保护所有串口读写
+    QByteArray                       m_rxBuffer;
+    int                              m_fd = -1;
+    QString                          m_dev = "/dev/ttyUSB0";
+    bool                             m_sessionActive = false;
 
-    QMutex m_writeMutex;
+    QTimer*                          m_valveTick   = nullptr; // 5 ms 默认
+    QTimer*                          m_encoderTick = nullptr; // 500 ms 默认
 
-    QByteArray m_rxBuffer;
+    // trackId -> 按 tOpenMs 升序的脉冲列表
+    QMap<int, QVector<PulseSlot>>    m_pending;
 
-    QTimer* m_speedTimer{nullptr};
+    // 从 cfg 缓存的运行期参数
+    int     m_valveTickIntervalMs       = 5;
+    int     m_encoderRequestIntervalMs  = 500;
+    float   m_encoderPulseToMm          = 0.1f;
 
-    int m_fd{-1};
-    int m_fd1{-1};
-    QString m_dev{"/dev/ttyUSB0"};
+    // 编码器速度估计:用相邻两次读数差分 / 时间差
+    qint64  m_lastEncoderTMs     = -1;
+    qint64  m_lastEncoderPulse   = -1;
 };
 
 #endif // BOARDCONTROL_H

@@ -20,6 +20,8 @@
 #include "camera_worker.h"
 #include "yolo_worker.h"
 #include "runtime_config.h"
+#include "boardcontrol.h"
+#include "pipeline_types.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -54,6 +56,9 @@ private slots:
 
     // 接 YoloWorker::detectedFrameReady(PR2 暂仅做一行日志,PR4 接 Tracker)
     void onDetectedFrame(const DetectedFrame& frame);
+
+    // 接 boardControl::speedSample(PR3,PR4 将改由 TrackerWorker 订阅)
+    void onBoardSpeedSample(const SpeedSample& s);
 
     void uploadOSSPath(const QString& filePath, const int ImgClass);
 
@@ -95,6 +100,10 @@ private:
     YoloWorker*   m_yoloWorker   = nullptr;
     QThread*      m_cameraThread = nullptr;
     QThread*      m_yoloThread   = nullptr;
+
+    // ---- BoardWorker(PR3,仍用原 boardControl 类扩展) ----
+    boardControl* m_board         = nullptr;
+    QThread*      m_boardThread   = nullptr;
 
     // ---- 历史 worker(保留) ----
     uploadpictoOSS* ossThread;
