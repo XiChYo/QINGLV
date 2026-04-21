@@ -134,17 +134,19 @@ QVector<ValvePulse> Dispatcher::computePulses(const SortTask& task, float speedM
                           / static_cast<float>(std::max(1, m_cfg.valveTotalChannels));
     if (chanW <= 0.0f) return result;
 
-    // bbox 在 belt 系 mm
+    // bbox 在 belt 系 mm。belt 的 y 轴沿运动方向递增,所以 bbox 里
+    // yb_max 一侧(bb.y + bb.height) 是物体"前沿"(先到喷阀线),
+    // yb_min 一侧(bb.y) 是"后沿"(最后到达)。
     const cv::Rect& bb      = task.bboxBeltRasterPx;
-    const float bbox_yb_min = bb.y * m;
-    const float bbox_yb_max = (bb.y + bb.height) * m;
+    const float bbox_yb_min = bb.y * m;                        // 后沿
+    const float bbox_yb_max = (bb.y + bb.height) * m;          // 前沿
     const float bbox_xb_min = bb.x * m;
 
-    // 前/后沿到喷阀线的剩余距离(mm)
-    const float dy_head = valveY - bbox_yb_min;
-    const float dy_tail = valveY - bbox_yb_max;
+    // 前沿 / 后沿到喷阀线的剩余距离(mm)。
+    const float dy_head = valveY - bbox_yb_max;    // 前沿剩余
+    const float dy_tail = valveY - bbox_yb_min;    // 后沿剩余
     if (dy_tail < 0) {
-        // 物体后沿已过喷阀线:全部过去了,不产生 pulse。
+        // 后沿已过喷阀线 → 物体全部越过,不再出 pulse。
         return result;
     }
 
@@ -152,20 +154,21 @@ QVector<ValvePulse> Dispatcher::computePulses(const SortTask& task, float speedM
     const qint64 tTail = task.tCaptureMs + static_cast<qint64>(std::round(dy_tail / speedMmPerMs));
     if (tTail <= tHead) return result;
 
-    // 头部留白面积
+    // 头部留白面积(按 "前沿侧" 的行往后累积)
     const cv::Mat& mask = task.maskBeltRaster;
     const int totalArea = cv::countNonZero(mask);
     if (totalArea <= 0) return result;
     const int skipArea  = static_cast<int>(std::round(totalArea * m_cfg.valveHeadSkipRatio));
 
-    // 沿 mask 从前沿到后沿扫描行,累积非零像素数到 >= skipArea 时记 row_open_start
-    int row_open_start = 0;
+    // 沿 mask 从前沿(最后一行,mask.rows-1)向后沿扫描,
+    // 累积到 >= skipArea 时该行作为 "开阀起始行"。
+    int row_open_start = mask.rows - 1;
     int cum = 0;
-    for (int r = 0; r < mask.rows; ++r) {
+    for (int r = mask.rows - 1; r >= 0; --r) {
         cum += cv::countNonZero(mask.row(r));
         if (cum >= skipArea) { row_open_start = r; break; }
     }
-    // 该行对应的 belt yb(物体 mask 是以 bbox 左上对齐的)
+    // 该行对应的 belt yb(mask 在 bbox 局部,行 r=0 对应 bb.y = 后沿最近一侧)
     const float yb_open = (bb.y + row_open_start) * m;
     const float dy_open = valveY - yb_open;
     if (dy_open < 0) {
@@ -182,10 +185,11 @@ QVector<ValvePulse> Dispatcher::computePulses(const SortTask& task, float speedM
     QMap<int, qint64> lastOpenOnBoard;
 
     for (qint64 t = tOpenStart; t < tTail; t += openDurMs) {
-        // 该时刻物体前沿在 belt 系的位置
-        const float obj_front_yb = bbox_yb_min + speedMmPerMs * (t - task.tCaptureMs);
-        // 喷阀线映射到物体局部的 y(mm),再换成 mask 行索引
-        const float local_y_mm   = valveY - obj_front_yb;
+        // 该时刻 belt 上"喷阀线对应物体的位置":valveY - 物体前沿已走过的距离。
+        // 因为前沿初始在 bbox_yb_max,经过 dt 后前沿到 bbox_yb_max + speed*dt。
+        // 喷阀线 y = valveY 对应 mask 内的行 = valveY - (bbox_yb_min + speed*dt - 0)
+        const float obj_tail_yb  = bbox_yb_min + speedMmPerMs * (t - task.tCaptureMs);
+        const float local_y_mm   = valveY - obj_tail_yb;  // 相对 mask 底部的 y
         const int   local_row    = static_cast<int>(std::round(local_y_mm / m));
         if (local_row < 0 || local_row >= mask.rows) continue;
 

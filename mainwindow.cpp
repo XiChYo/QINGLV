@@ -616,12 +616,14 @@ void MainWindow::onBoardSpeedSample(const SpeedSample& s)
 
 void MainWindow::onSortTask(const SortTask& task)
 {
-    LOG_INFO(QString("SortTask: trackId=%1 cls=%2 target=%3 areaMm2=%4 speed=%5mm/ms")
+    LOG_INFO(QString("SortTask: trackId=%1 cls=%2 bbox=(%3,%4,%5x%6) speed=%7mm/ms")
              .arg(task.trackId)
-             .arg(task.classId)
-             .arg(static_cast<int>(task.target))
-             .arg(task.areaMm2, 0, 'f', 1)
-             .arg(task.speedMmPerMsAtTrigger, 0, 'f', 4));
+             .arg(task.finalClassId)
+             .arg(task.bboxBeltRasterPx.x)
+             .arg(task.bboxBeltRasterPx.y)
+             .arg(task.bboxBeltRasterPx.width)
+             .arg(task.bboxBeltRasterPx.height)
+             .arg(task.currentSpeedMmPerMs, 0, 'f', 4));
 }
 
 void MainWindow::onArmStubDispatched(int trackId, int classId,
