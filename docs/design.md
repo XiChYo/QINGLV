@@ -799,7 +799,7 @@ CSV 路径由 `persistence.arm_stub_csv` 指定;每天一个文件(按 `YYYYMMDD
 
 ### PR2 — CameraWorker + YoloWorker 重构
 - `CameraWorker`:实现软件节流、`tCaptureMs` 打戳、`frameReady` 新签名。
-- `YoloWorker`:模型常驻;新 `onFrame` 槽;单元素反压队列;`frameInferred` + `visualizeReady` 信号;`conf_threshold` / `nms_threshold` 从配置读(作为 `post_process_seg` 参数传入)。
+- `YoloWorker`:模型常驻;新 `onFrame` 槽;单元素反压队列;`frameInferred` + `visualizeReady` 信号;`conf_threshold` / `nms_threshold` 从配置读(作为 `post_process_seg_ex` 参数传入)。
 - `MainWindow` 连接新信号到一个临时"可视化+空实现"的日志 slot,验证 YOLO 仍工作。
 
 **验证**:UI 显示 box+mask+类别标签;手动观察帧率 ≈ fps;反压下日志有 droppedBusy。

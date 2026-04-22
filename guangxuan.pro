@@ -29,7 +29,6 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     pipeline_clock.cpp \
-    postprocess.cpp \
     postprocess_ex.cpp \
     robotcontrol.cpp \
     runtime_config.cpp \

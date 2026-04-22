@@ -1,23 +1,20 @@
 #ifndef POSTPROCESS_H
 #define POSTPROCESS_H
 
+// ----------------------------------------------------------------------------
+// 仅保留 YOLOv8-Seg 后处理共享的数据结构 SegObject。
+// 旧的 post_process_seg / draw_results 已被 postprocess_ex.{h,cpp} 中的
+// post_process_seg_ex / draw_results_ex 取代(可运行时注入阈值、按类 NMS、
+// 延后计算 mask),此文件不再提供任何函数实现。
+// ----------------------------------------------------------------------------
+
 #include <opencv2/opencv.hpp>
-#include <vector>
 
 struct SegObject {
     cv::Rect box;
-    int label;
-    float prob;
+    int label = -1;
+    float prob = 0.0f;
     cv::Mat mask;
 };
 
-void post_process_seg(const float* det_data, int det_count, int det_len,
-                      const float* proto_data, int proto_c, int proto_h, int proto_w, bool proto_nchw,
-                      int num_classes,
-                      int model_w, int model_h, int orig_w, int orig_h,
-                      int pad_w, int pad_h, float scale,
-                      std::vector<SegObject>& results);
-
-void draw_results(cv::Mat& img, const std::vector<SegObject>& results);
-
-#endif
+#endif  // POSTPROCESS_H
