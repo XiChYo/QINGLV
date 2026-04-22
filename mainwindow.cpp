@@ -144,6 +144,11 @@ MainWindow::MainWindow(QWidget *parent)
         // 解析后的 SpeedSample 给后续 Tracker/Dispatcher;PR3 仅在 UI 落日志。
         connect(m_board, &boardControl::speedSample,
                 this, &MainWindow::onBoardSpeedSample);
+        // H1:串口打开失败等板卡层错误必须冒泡到 UI,
+        //     否则 Running 态下阀不动、编码器 0、业务完全静默。
+        connect(m_board, &boardControl::errorOccured,
+                this, &MainWindow::onPipelineWarning,
+                Qt::QueuedConnection);
 
         // 保存本地文件线程
         savelocalpicThread = new saveLocalpic;
