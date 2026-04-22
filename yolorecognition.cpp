@@ -11,6 +11,8 @@
 #include "postprocess.h"
 #include "yolorecognition.h"
 
+#include <QDateTime>
+
 // Set to 1 to enable verbose diagnostic logs.
 #ifndef RKNN_DEBUG
 #define RKNN_DEBUG 1
@@ -291,7 +293,7 @@ QPoint yolorecognition::run_seg_predict(const RknnModelSession& session,
                             int topk_class_count,
                             const std::vector<uint8_t>& enabled_mask,
                             bool draw_overlay,
-                            cv::Mat& result_img) {
+                            cv::Mat& result_img,const int timefortest) {
     // 预测函数：预处理、推理、后处理；绘制与写盘在计时外执行。
     int x;
     int y;
@@ -612,18 +614,21 @@ QPoint yolorecognition::run_seg_predict(const RknnModelSession& session,
                     return QPoint(-1,-1);
                 }
                 x = obj.box.x + obj.box.width / 2;
-                y = obj.box.y + obj.box.height / 2;
+                y = obj.box.y + obj.box.height / 2;                
 
-                if (area>=600000 && (obj.label == 8 || obj.label == 6) && (y <= 1300 && y >= 800))
-                {
+                QString now = QDateTime::currentDateTime().toString("--识别完成--yyyy-MM-dd HH:mm:ss.zzz || 第");
+                qDebug() << now << timefortest << "次";
+                emit objPointSig(QPoint(x,y));
+//                if (area>=600000 && (obj.label == 8 || obj.label == 6) && (y <= 1300 && y >= 800))
+//                {
 
 //                    qDebug() << "center:" << x << y;
 //                    qDebug()<<"muban or zhipi";
 
-                    emit pointSig(x);
+//                    emit pointSig(x);
                     // QImage save50 = matToQImage(result_img);
                     // emit frameReadySig(save50);
-                }
+//                }
 
             }
 
@@ -652,7 +657,10 @@ yolorecognition::yolorecognition(QObject* parent):QObject(parent)
 {
     
 }
-int yolorecognition::recognition(const QImage& image) {
+int yolorecognition::recognition(const QImage& image,const int timefortest) {
+
+    QString now = QDateTime::currentDateTime().toString("--开始识别--yyyy-MM-dd HH:mm:ss.zzz || 第");
+    qDebug() << now << timefortest << "次";
 //    if (argc < 3) {
 //        printf("Usage: %s <rknn_model> <image_path> [topk_class_count] [draw_overlay:1|0]\n", argv[0]);
 //        return -1;
@@ -697,7 +705,7 @@ int yolorecognition::recognition(const QImage& image) {
     }
 
     cv::Mat result_img;
-    const QPoint corPoint = run_seg_predict(session, orig_img, topk_class_count, enabled_mask, draw_overlay, result_img);
+    const QPoint corPoint = run_seg_predict(session, orig_img, topk_class_count, enabled_mask, draw_overlay, result_img, timefortest);
 
     QImage img = matToQImage(result_img);
 
@@ -718,7 +726,7 @@ int yolorecognition::recognition(const QImage& image) {
     cv::imwrite("orig_img.jpg", orig_img);
     cv::imwrite("result_seg.jpg", result_img);
 
-    emit objPointSig(corPoint);
+//    emit objPointSig(corPoint);
 
     return 0;
 }

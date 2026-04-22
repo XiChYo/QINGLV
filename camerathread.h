@@ -21,7 +21,8 @@ protected:
     void run() override;
 
 signals:
-    void frameReadySig(const QImage& img, const QString& fileName);
+//    void frameReadySig(const QImage& img, const QString& fileName,const int timefortest);
+    void frameReadySig(const QImage& img, const int timefortest);
     void errorMegSig(const QString& errMeg);
 
 private:

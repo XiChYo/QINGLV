@@ -27,7 +27,7 @@ public:
     QPoint m_point;
     QImage matToQImage(const cv::Mat& mat);
 public slots:
-    int recognition(const QImage& image);
+    int recognition(const QImage& image,const int timefortest);
 signals:
     void objPointSig(QPoint objPoint);
     void resultImgSig(const QImage& img);
@@ -43,7 +43,7 @@ private:
                            int topk_class_count,
                            const std::vector<uint8_t>& enabled_mask,
                            bool draw_overlay,
-                           cv::Mat& result_img);
+                           cv::Mat& result_img,const int timefortest);
 
 
 };

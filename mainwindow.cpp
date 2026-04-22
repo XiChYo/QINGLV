@@ -107,15 +107,17 @@ MainWindow::MainWindow(QWidget *parent)
                 this, &MainWindow::uploadOSSPath);
         connect(camThread, &camerathread::errorMegSig,
                 this, &MainWindow::cameraerrorMegSig,Qt::QueuedConnection);
-        if (camThread->openCamera("192.168.1.30")) {
+        if (camThread->openCamera("192.168.0.20")) {
             LOG_INFO("Camera thread started");
             camThread->start();
         }
 
         yolorecogThread = new yolorecognition;
         yolorecogThread->moveToThread(threadPool_yolo);
+
         connect(camThread, &camerathread::frameReadySig,
                 yolorecogThread, &yolorecognition::recognition);
+
         connect(yolorecogThread, &yolorecognition::resultImgSig,
                 this, &MainWindow::updateFrame);
 
@@ -134,8 +136,8 @@ MainWindow::MainWindow(QWidget *parent)
                 m_calDistance, &calDistance::calATime);
 
         m_tracker = new ConveyorTracker;
-        connect(m_calDistance,&calDistance::s_point,
-                m_tracker, &ConveyorTracker::addTask);
+//        connect(m_calDistance,&calDistance::s_point,
+//                m_tracker, &ConveyorTracker::addTask);
 
         connect(m_tracker, &ConveyorTracker::taskFinished,
                 this, &MainWindow::doTask);

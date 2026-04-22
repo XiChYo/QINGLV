@@ -24,8 +24,8 @@ void calDistance::distance(const QPoint& corPoint)
 
     float realPosX = realLength * percX;  // real cor x
 
-    float realPosY = realWidth * percY + 900; // mm
-    float time = realPosY / 100;   // 100mm/s
+    float realPosY = realWidth * percY + endToSpray; // m
+//    float time = realPosY / 100;   // 100mm/s
 
 //    float biaX = 2 * (realPosX - 500 + 57.5);
 //    QString result_string = QString("%1,0").arg(biaX);
@@ -33,11 +33,30 @@ void calDistance::distance(const QPoint& corPoint)
 
     int index = getIndex(realPosX);
 
+//    qDebug()<<"past x:"<<picX;
+//    qDebug()<<"past realPosX:"<<realPosX;
+//    qDebug()<<"***************past index:"<<index;
+
+    if (index > 58)
+    {
+        index += 1;
+    }else if(index < 14 && index >7)
+    {
+        index -= 1;
+    }else if(index < 7 && index >= 2)
+    {
+        index -= 2;
+    }
+
+//    qDebug()<<"now x:"<<picX;
+//    qDebug()<<"now realPosX:"<<realPosX;
+//    qDebug()<<"--------------now index:"<<index;
+
     const std::vector<ValveCmd>& results = generateCommands(index);
 
 
 
-    emit s_point(results, realPosY);
+//    emit s_point(results, realPosY);
 
     return;
 
@@ -103,7 +122,7 @@ std::vector<ValveCmd> calDistance::generateCommands(int index)
                 .arg(low, 2, 16, QChar('0'))
                 .toUpper();
 
-        qDebug() << "cmd : result Send:" << msg;
+//        qDebug() << "cmd : result Send:" << msg;
     }
 
     return result;

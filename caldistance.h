@@ -18,8 +18,8 @@ public:
 
     float picLength = 2448;
     float picWidth = 2048;
-    float realLength = 560;    // mm
-    float realWidth = 470;  // mm
+    float realLength = 1.52;    // m
+    float realWidth = 1.27;  // mm
 
     float endToSpray = 0.7; // 相机视野末端到喷阀的距离 m
 

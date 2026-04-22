@@ -11,7 +11,7 @@ saveLocalpic::saveLocalpic(QObject* parent)
 {
 }
 
-void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName)
+void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName,const int timefortest)
 {
 
 //    if (testint == 1)

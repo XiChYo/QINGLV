@@ -27,6 +27,7 @@ bool camerathread::openCamera(const QString& ip)
         if (MV_OK != nRet)
         {
             emit errorMegSig(QString("MV_CC_Initialize fail! 0x%1").arg(nRet));
+
             return false;
         }
 
@@ -176,11 +177,15 @@ void camerathread::run()
 
             MV_FRAME_OUT frame = {0};
 
+            int timefortest = 0;
             while (m_running && !isInterruptionRequested())
             {
+                QString now = QDateTime::currentDateTime().toString("--取图--yyyy-MM-dd HH:mm:ss.zzz || 第");
+                qDebug() << now << timefortest << "次";
+                timefortest++;
 
                 // 时间没到，不取图
-                QThread::msleep(captureIntervalMs);
+                QThread::msleep(500);
 
                 // 取图
                 if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) != MV_OK)
@@ -232,7 +237,8 @@ void camerathread::run()
 //                bool ok = image.load(saveDirPath);
                 // 必须 copy，防止内存复用
 //                qDebug()<<"camera";
-                emit frameReadySig(img, fileName);
+//                emit frameReadySig(img, fileName, timefortest);
+                emit frameReadySig(img, timefortest);
 
                 MV_CC_FreeImageBuffer(m_hCam, &frame);
             }

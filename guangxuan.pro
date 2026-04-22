@@ -35,8 +35,7 @@ SOURCES += \
     tcpforrobot.cpp \
     updatemanager.cpp \
     uploadpictooss.cpp \
-    yolorecognition.cpp \
-    yolothread.cpp
+    yolorecognition.cpp
 
 HEADERS += \
     ConveyorTracker.h \
@@ -54,8 +53,7 @@ HEADERS += \
     uploadpictooss.h \
     valvecmd.h \
     yolorecognition.h \
-    yoloresulttypes.h \
-    yolothread.h
+    yoloresulttypes.h
 
 
 FORMS += \
