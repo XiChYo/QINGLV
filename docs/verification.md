@@ -164,7 +164,7 @@
 
 | ID | 检查点 | 验证方法 | 通过标准 |
 |---|---|---|---|
-| PR4-01 | Tracker 首帧丢弃 | `pipeline_tests -select TrackerWorkerTest::firstFrame_isDiscarded` | PASS;`m_active.size()==0`,`m_firstFrame==false`,`m_tOriginMs>0` |
+| PR4-01 | Tracker 首帧入 ghost | `pipeline_tests -select TrackerWorkerTest::firstFrame_registersAllAsGhosts` | PASS;`m_active.size()==0`,`m_ghosts.size()==detN`,`m_firstFrame==false`,无 sortTask |
 | PR4-02 | Tracker 新物体新建 track | `pipeline_tests -select TrackerWorkerTest::newDet_createsActiveTrack` | PASS;`m_active.size()==1`,`updateCount==1` |
 | PR4-03 | Tracker 达到 Y 触发分拣 | `pipeline_tests -select TrackerWorkerTest::repeatedDet_increasesUpdateCountAndTriggersSortTask_whenClassEnabled` | PASS;`sortTaskReady` 发 1 次;`SortTask.finalClassId==1`;`m_active.size()==0`,`m_ghosts.size()==1` |
 | PR4-04 | Tracker 未启用类别不触发 | `pipeline_tests -select TrackerWorkerTest::repeatedDet_doesNotTrigger_whenClassDisabled` | PASS;`sortTaskReady` 发 0 次 |

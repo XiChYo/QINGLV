@@ -88,7 +88,6 @@ void TrackerWorkerTest::firstFrame_registersAllAsGhosts()
     QCOMPARE(trk.m_active.size(), 0);          // 首帧不入 active
     QCOMPARE(trk.m_ghosts.size(), 1);          // 首帧全进 ghost
     QCOMPARE(trk.m_firstFrame, false);
-    QVERIFY(trk.m_tOriginMs > 0);
     QCOMPARE(spy.count(), 0);                  // 未触发分拣
 }
 

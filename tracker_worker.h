@@ -72,8 +72,6 @@ private:
     int                    m_nextTrackId   = 1;
     bool                   m_firstFrame    = true;
     float                  m_mmPerPx       = 2.0f;
-    // 原点:首帧采图时刻对齐到 tb=0 的 belt y 偏移(PR4 简化为 0)。
-    qint64                 m_tOriginMs     = -1;
 };
 
 #endif  // TRACKER_WORKER_H

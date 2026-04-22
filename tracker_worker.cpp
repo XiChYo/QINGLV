@@ -30,7 +30,6 @@ void TrackerWorker::onSessionStart(const RuntimeConfig& cfg)
     m_lastSpeed     = {};
     m_nextTrackId   = 1;
     m_firstFrame    = true;
-    m_tOriginMs     = -1;
     m_sessionActive = true;
     LOG_INFO(QString("TrackerWorker sessionStart mm_per_px=%1 iou_th=%2 miss_x=%3 upd_y=%4")
              .arg(m_mmPerPx).arg(cfg.iouThreshold)
@@ -88,7 +87,6 @@ void TrackerWorker::rasterizeToBelt(const DetectedObject& det,
     // 随后 extrapolateBbox 又按 (toT - fromT) 再加一次,造成跨帧 IoU 对不齐。
     // 本处与 extrapolateBbox 必须保持"单一位移口径":
     //   bbox_at(t) = rasterize(det, tCapture) + speed * (t - tCapture)
-    if (m_tOriginMs < 0) m_tOriginMs = tCaptureMs;
 
     // 2. 栅格化 bbox
     const int gx = static_cast<int>(std::round(bbox_xb_mm / m_mmPerPx));
@@ -165,14 +163,24 @@ SortTask TrackerWorker::makeSortTask(const TrackedObject& trk, int finalClassId)
 
 void TrackerWorker::purgeGhosts(qint64 nowMs)
 {
-    const float sortLineYb = valveLineYb();
+    // 分拣线在 belt 坐标系里的 y:
+    //   valve 模式 -> img_bottom + valve_distance
+    //   arm   模式 -> img_bottom + arm_distance
+    // img_bottom 的 yb = real_width_mm(栅格化时 tOrigin 相机底边对齐)。
+    const float dispatchLineYb =
+        (m_cfg.sorterMode == RuntimeConfig::SorterMode::Arm)
+            ? (m_cfg.realWidthMm + m_cfg.armDistanceMm)
+            : valveLineYb();
     const float clearExtra = m_cfg.dispatchedPoolClearMm;
 
     for (int i = m_ghosts.size() - 1; i >= 0; --i) {
         const cv::Rect nowBbox = extrapolateBbox(m_ghosts[i].bboxBeltRasterPx,
                                                  m_ghosts[i].tCaptureMs, nowMs);
-        const float yb_front_mm = nowBbox.y * m_mmPerPx;
-        if (yb_front_mm > sortLineYb + clearExtra) {
+        // bbox 在 belt 系里:y = trailing edge(远离分拣线),y+height = leading edge(先过线)。
+        // ghost 只有在 trailing edge 也越过分拣线 + 清除距离后,才安全回收,
+        // 保守多保留一会儿可抑制跨帧检测抖动引起的二次派发。
+        const float yb_trail_mm = nowBbox.y * m_mmPerPx;
+        if (yb_trail_mm > dispatchLineYb + clearExtra) {
             m_ghosts.removeAt(i);
         }
     }
@@ -190,7 +198,6 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
     // 幽灵会随 extrapolate 自然推过喷阀线 + 清除距离,再由 purgeGhosts 回收。
     if (m_firstFrame) {
         m_firstFrame = false;
-        m_tOriginMs  = frame.tCaptureMs;
         for (int i = 0; i < frame.objs.size(); ++i) {
             cv::Mat mask;
             cv::Rect bbox;

@@ -473,13 +473,14 @@ for ghost in m_ghosts (safe copy):
 
 ```text
 # 1. 预估物体通过喷阀线的时间窗口
+#    约定:belt 运动方向为 +yb;bbox 的 y 字段是 trailing edge(离 valve 远),y+h 是 leading edge(先过 valve)。
 speed = current_speed_mm_per_ms                      # 从 SpeedSample 取
 mask = task.maskBeltRaster (栅格, mm/px = m)
-bbox_yb_min = task.bboxBeltRasterPx.y * m            # 物体前沿 yb
-bbox_yb_max = (task.bboxBeltRasterPx.y + h) * m      # 物体后沿 yb
+bbox_yb_lead  = (task.bboxBeltRasterPx.y + h) * m    # 物体前沿 yb(leading edge,先到 valve)
+bbox_yb_trail = task.bboxBeltRasterPx.y * m          # 物体后沿 yb(trailing edge,最后到 valve)
 
-Δy_head = valve.line_yb_mm - bbox_yb_min  # 前沿到喷阀线的剩余距离
-Δy_tail = valve.line_yb_mm - bbox_yb_max
+Δy_head = valve.line_yb_mm - bbox_yb_lead   # 前沿到喷阀线的剩余距离(≥0 表示还没到)
+Δy_tail = valve.line_yb_mm - bbox_yb_trail
 # task.tCaptureMs 为 belt 系快照时刻
 t_head_arrive = task.tCaptureMs + Δy_head / speed    # 物体前沿抵达喷阀线
 t_tail_arrive = task.tCaptureMs + Δy_tail / speed    # 物体后沿抵达喷阀线

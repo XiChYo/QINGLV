@@ -922,12 +922,16 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
     if (frame.size() < 8)
         return;
 
-    // 协议:第 6、7 字节(0-based)为转速,高字节在前。
-    // 经验系数 0.502:单位换算为 m/min。PR3 会将该解析下沉到 BoardWorker。
+    // 协议:第 6、7 字节(0-based)为转速代理(raw),高字节在前。
+    // raw -> m/min 的转换系数来自配置 [belt] encoder_raw_to_m_per_min(默认 0.502),
+    // 与 BoardWorker::requestEncoderSpeed() 保持同一口径,避免 UI 与 Tracker/Dispatcher 读数分叉。
     quint16 rotation =
         (static_cast<quint8>(frame[6]) << 8) |
          static_cast<quint8>(frame[7]);
-    speed = rotation * 0.502;
+    const float k = (m_cfg.encoderRawToMPerMin > 0.0f)
+                        ? m_cfg.encoderRawToMPerMin
+                        : 0.502f;
+    speed = rotation * k;
     QString speed_text = QString::number(int(speed)) + "m/min";
     ui->speed->setText(speed_text);
 }
