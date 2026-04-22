@@ -897,7 +897,6 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
     // frame 是原始串口数据
 //    qDebug() << "onEncoderSpeed Encoder raw:" << frame.toHex(' ').toUpper();
 
-    // ===== 示例解析（你可以按协议改）=====
     if (frame.size() < 8)
         return;
 
@@ -1007,48 +1006,6 @@ void MainWindow::doTask(Task task)
 void MainWindow::getAndsendA(int x)
 {
 
-
-//    if (!isABusy)
-//    {
-//        qDebug()<<"use A";
-//        isABusy = true;
-
-////        QMetaObject::invokeMethod(m_tcpserverA, [=]() {
-////            qDebug()<<"invokeMethod AAA";
-////            m_tcpserverA->test();
-////        }, Qt::QueuedConnection);
-
-
-//        QTimer::singleShot(1000, this, [this]() {
-//            qDebug()<<"invokeMethod AAA";
-//            m_tcpserverA->test();
-//        });
-
-//        QTimer::singleShot(2000, this, [this]() {
-//            isABusy = false;
-//            qDebug() << "A released";
-//        });
-
-//    }else if(!isBBusy){
-//        qDebug()<<"use B";
-//        isBBusy = true;
-////        QMetaObject::invokeMethod(m_tcpserverA, [=]() {
-////            qDebug()<<"invokeMethod BBB";
-////            m_tcpserverA->test();
-////        }, Qt::QueuedConnection);
-
-
-//        QTimer::singleShot(1000, this, [this]() {
-//            qDebug()<<"invokeMethod BBB";
-//            m_tcpserverA->test();
-//        });
-//        QTimer::singleShot(2000, this, [this]() {
-//            isBBusy = false;
-//            qDebug() << "B released";
-//        });
-//    }
-
-
     if (m_tcpserverA->isConnected("192.168.0.30") || m_tcpserverA->isConnected("192.168.0.20"))
     {
         qDebug()<<"X:"<<x;
@@ -1153,44 +1110,7 @@ void MainWindow::getAndsendA(int x)
                 isABusy = false;
                 qDebug() << "----A released----";
             });
-
         }
-//        else if(!isBBusy && m_tcpserverA->isConnected("192.168.0.20")){
-
-//            if (grapPos < -300)
-//            {
-//                grapPos -= ui->less300->text().toInt();
-//            }
-//            baseTime = ui->mTimeLabel->text().toInt();
-
-//            if (grapPos >= -150)
-//            {
-//                index = 0;
-//            }
-//            else
-//            {
-//                index = (int)((-grapPos - 150) / ui->aEnd->text().toInt()) + 1;
-//            }
-//            mTime = baseTime - index * ui->aMoreTime->text().toInt();
-
-//            QString str = QString("\n%1,0,0\n").arg(grapPos);
-//            QByteArray grapPosdata = str.toUtf8();
-
-//            qDebug()<<"---------------use B---------------";
-//            qDebug()<<"grapPos:"<<grapPos;
-//            qDebug()<<"mTime:"<<mTime;
-//            isBBusy = true;
-
-//            QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
-//                qDebug()<<"send BBB:"<<grapPosdata;
-//                m_tcpserverA->sendToIP("192.168.0.20", grapPosdata);
-//            });
-
-//            QTimer::singleShot(10000, this, [this]() {
-//                isBBusy = false;
-//                qDebug() << "----B released----";
-//            });
-//        }
     }
 }
 

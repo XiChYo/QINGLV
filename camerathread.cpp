@@ -103,47 +103,6 @@ bool camerathread::openCamera(const QString& ip)
         MV_CC_StartGrabbing(m_hCam);
 
         m_running = true;
-//        int nRet = MV_CC_Initialize();
-//        if (MV_OK != nRet)
-//        {
-//            printf("MV_CC_Initialize fail! nRet [0x%x]\n", nRet);
-//            emit errorMegSig(QString("MV_CC_Initialize fail! nRet [0x%x]\n").arg(nRet));
-//            return -1;
-//        }
-
-//        MV_CC_DEVICE_INFO_LIST devList = {0};
-//        memset(&devList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
-//        MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
-
-//        MV_CC_CreateHandle(&m_hCam, devList.pDeviceInfo[0]);
-//        int ret = MV_CC_OpenDevice(m_hCam);
-
-//        // 像素格式
-//        MV_CC_SetEnumValue(m_hCam, "PixelFormat", PixelType_Gvsp_BGR8_Packed);
-
-//        // 曝光
-//        MV_CC_SetEnumValue(m_hCam, "ExposureAuto", 0);
-//        MV_CC_SetFloatValue(m_hCam, "ExposureTime", 1000.0f); // 1ms
-
-//        // 白平衡
-//        MV_CC_SetEnumValue(m_hCam, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_ONCE);
-
-//        // 帧率控制
-//        MV_CC_SetBoolValue(m_hCam, "AcquisitionFrameRateEnable", true);
-//        MV_CC_SetFloatValue(m_hCam, "AcquisitionFrameRate", 60.0f);
-
-//        if (ret != MV_OK) {
-//            qDebug() << "Open camera failed";
-//            emit errorMegSig("Open camera failed");
-//            return false;
-//        }
-
-//        MV_CC_SetEnumValue(m_hCam, "AcquisitionMode", 2);
-//        MV_CC_SetEnumValue(m_hCam, "TriggerMode", 0);
-
-//        MV_CC_StartGrabbing(m_hCam);
-
-//        m_running = true;
     }catch(std::exception& e)
     {
         emit errorMegSig(e.what());
@@ -228,15 +187,12 @@ void camerathread::run()
                     .arg(QDateTime::currentDateTime()
                          .toString("yyyyMMdd_hhmmss_zzz"));
 
-
+//                // 保存照片
 //                QImage image;
 //                QString baseDir = QCoreApplication::applicationDirPath();
-
 //                QString saveDirPath = baseDir + "/saveRawPic/img_20260327_172735_817.jpg";
-
 //                bool ok = image.load(saveDirPath);
-                // 必须 copy，防止内存复用
-//                qDebug()<<"camera";
+
 //                emit frameReadySig(img, fileName, timefortest);
                 emit frameReadySig(img, timefortest);
 

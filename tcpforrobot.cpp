@@ -48,29 +48,6 @@ void tcpforrobot::stopServer()
     }
 }
 
-// 新连接
-//void tcpforrobot::onNewConnection()
-//{
-//    m_clientSocket = m_server->nextPendingConnection();
-
-//    isConnected = true;
-
-//    qDebug() << "Client connected:"
-//             << m_clientSocket->peerAddress().toString()
-//             << m_clientSocket->peerPort();
-
-//    connect(m_clientSocket, &QTcpSocket::readyRead,
-//            this, &tcpforrobot::onReadyRead);
-
-//    connect(m_clientSocket, &QTcpSocket::disconnected,
-//            this, &tcpforrobot::onDisconnected);
-//}
-void tcpforrobot::test()
-{
-//    QThread::msleep(1000);
-    qDebug()<<"777777777777777777;";
-}
-
 void tcpforrobot::onNewConnection()
 {
     while (m_server->hasPendingConnections())

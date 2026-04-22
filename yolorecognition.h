@@ -45,7 +45,6 @@ private:
                            bool draw_overlay,
                            cv::Mat& result_img,const int timefortest);
 
-
 };
 
 #endif // YOLORECOGNITION_H

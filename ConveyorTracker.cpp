@@ -27,7 +27,6 @@ int ConveyorTracker::addTask(const std::vector<ValveCmd>& cmds, float distance)
 void ConveyorTracker::updateSpeed(double speed)
 {
     QMutexLocker locker(&m_mutex);
-//    qDebug()<<"updateSpeed:"<<speed;
 
     qint64 now = m_timer.elapsed();
     double dt = (now - m_lastTime) / 1000.0;
@@ -55,7 +54,7 @@ void ConveyorTracker::updateSpeed(double speed)
         {
             task.finished = true;
 
-            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
+//            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
             for (const auto& cmd : task.cmds)
             {
                 uint8_t valve = cmd.valveId;
@@ -68,10 +67,10 @@ void ConveyorTracker::updateSpeed(double speed)
                         .arg(low, 2, 16, QChar('0'))
                         .toUpper();
 
-                qDebug() << "taskFinishedtaskFinishedtaskFinishedTask" << task.id << "Send:" << cmdStr;
+//                qDebug() << "taskFinishedtaskFinishedtaskFinishedTask" << task.id << "Send:" << cmdStr;
 
             }
-            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
+//            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
 
             emit taskFinished(task);
         }

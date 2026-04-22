@@ -26,11 +26,7 @@ public:
 
     int port = 5000;
 
-
-
     void sendToIP(const QString& ip, const QByteArray &data);
-
-    void test();
 
     bool isConnected(const QString& ip);
 

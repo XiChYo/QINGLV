@@ -43,7 +43,6 @@ bool boardControl::openSerial()
     }
     break;
     }
-//    qDebug()<<"open serial succeed";
 
     termios tty{};
     tcgetattr(m_fd, &tty);
@@ -57,9 +56,6 @@ bool boardControl::openSerial()
     tty.c_cflag &= ~PARENB;
     tty.c_cflag &= ~CSTOPB;
     tty.c_cflag &= ~CSIZE;
-
-//    tty.c_cflag &= ~CRTSCTS;
-
     tty.c_cflag |= CS8;
 
     tty.c_cc[VMIN]  = 0;
@@ -92,12 +88,7 @@ bool boardControl::writeFrame(const QByteArray& frame, int speedOrjet)
         return false;
     }
     m_writeMutex.lock();
-//    tcdrain(m_fd);
     ssize_t ret = ::write(m_fd, frame.constData(), frame.size());
-//    tcdrain(m_fd);
-//    QThread::msleep(500);
-//    ::write(m_fd1, frame.constData(), frame.size());
-//    ::write(m_fd, frame.constData(), frame.size());
     tcdrain(m_fd);
     m_writeMutex.unlock();
 
@@ -183,8 +174,6 @@ void boardControl::initSerial()
         qDebug()<<"openSerial failed";
         return;
     }
-//    qDebug()<<"openSerial succeed";
-
     m_speedTimer = new QTimer(this);
     connect(m_speedTimer, &QTimer::timeout,
             this, &boardControl::requestEncoderSpeed);

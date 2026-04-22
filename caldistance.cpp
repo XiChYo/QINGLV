@@ -25,11 +25,6 @@ void calDistance::distance(const QPoint& corPoint)
     float realPosX = realLength * percX;  // real cor x
 
     float realPosY = realWidth * percY + endToSpray; // m
-//    float time = realPosY / 100;   // 100mm/s
-
-//    float biaX = 2 * (realPosX - 500 + 57.5);
-//    QString result_string = QString("%1,0").arg(biaX);
-//    QByteArray result_QB = result_string.toUtf8();
 
     int index = getIndex(realPosX);
 
@@ -54,8 +49,6 @@ void calDistance::distance(const QPoint& corPoint)
 
     const std::vector<ValveCmd>& results = generateCommands(index);
 
-
-
 //    emit s_point(results, realPosY);
 
     return;
@@ -70,11 +63,6 @@ void calDistance::calATime()
 
 int calDistance::getIndex(float realPosX)
 {
-//    double realLength = 1.52;
-//    int parts = 72;
-
-//    double step = realLength / parts;
-
     int index = std::round(realPosX / step);
 
     // 防止越界

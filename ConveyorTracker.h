@@ -7,15 +7,6 @@
 #include <QMutex>
 #include <valvecmd.h>
 
-//struct Task
-//{
-//    int id;
-//    float targetDistance;
-//    float currentDistance;
-//    std::vector<ValveCmd> cmds;
-//    bool finished;
-//};
-
 class ConveyorTracker : public QObject
 {
     Q_OBJECT

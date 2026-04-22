@@ -20,9 +20,6 @@ public:
     unsigned short nPort = 10003;
 
     int nRet = -1;
-
-
-
 };
 
 #endif // ROBOTCONTROL_H

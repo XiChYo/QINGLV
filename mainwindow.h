@@ -16,7 +16,6 @@
 #include <thread>
 #include <atomic>
 #include "yolorecognition.h"
-#include "yolothread.h"
 #include "caldistance.h"
 #include "ConveyorTracker.h"
 #include "valvecmd.h"
@@ -111,7 +110,6 @@ private slots:
 
     void chan1_chan(QString ip);
 
-
     void on_auEnd_clicked();
 
     void on_adEnd_clicked();
@@ -139,23 +137,28 @@ private:
     QString m_currentLanguage;
 
     QList<QProgressBar*> progressBars; // 保存所有生成的 progressbar
+
     QStringList logList; // 保存日志信息
 
-    QGraphicsView* view;
+    QGraphicsView* view; // ui输出画面
     QGraphicsScene* scene;
     QGraphicsPixmapItem* pixmapItem;
-    camerathread* camThread;
-    uploadpictoOSS* ossThread;
-    saveLocalpic* savelocalpicThread;
-    yolorecognition* yolorecogThread;
-//    yolothread* m_yolothread;
-    calDistance* m_calDistance;
 
-    ConveyorTracker* m_tracker;
+    camerathread* camThread; // 相机线程
 
-    robotControl* m_robot;
+    uploadpictoOSS* ossThread; // oss线程
 
-    tcpforrobot *m_tcpserverA;
+    saveLocalpic* savelocalpicThread; // 保存照片线程
+
+    yolorecognition* yolorecogThread; // 算法识别线程
+
+    calDistance* m_calDistance; // 距离计算线程
+
+    ConveyorTracker* m_tracker; // 喷气任务线程
+
+    robotControl* m_robot; // 机器人线程
+
+    tcpforrobot *m_tcpserverA; // 机器人通信线程
 
     QThread* threadPool;
     QThread* threadPool_yolo;

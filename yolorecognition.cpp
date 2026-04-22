@@ -661,24 +661,9 @@ int yolorecognition::recognition(const QImage& image,const int timefortest) {
 
     QString now = QDateTime::currentDateTime().toString("--开始识别--yyyy-MM-dd HH:mm:ss.zzz || 第");
     qDebug() << now << timefortest << "次";
-//    if (argc < 3) {
-//        printf("Usage: %s <rknn_model> <image_path> [topk_class_count] [draw_overlay:1|0]\n", argv[0]);
-//        return -1;
-//    }
 
-//    const char* model_path = argv[1];
-//    const char* image_path = argv[2];
     int topk_class_count = 80;
-//    if (argc >= 4) {
-//        topk_class_count = atoi(argv[3]);
-//        if (topk_class_count <= 0) {
-//            topk_class_count = 80;
-//        }
-//    }
     bool draw_overlay = true;
-//    if (argc >= 5) {
-//        draw_overlay = (atoi(argv[4]) != 0);
-//    }
 
     RknnModelSession session;
     if (!init_model_session(model_path, session)) {
@@ -694,8 +679,6 @@ int yolorecognition::recognition(const QImage& image,const int timefortest) {
         release_session(session);
         return -1;
     }
-
-//    cv::Mat orig_img = cv::imread(image_path);
 
     cv::Mat orig_img = QImage2Mat(image);
     if (orig_img.empty()) {
@@ -747,29 +730,6 @@ cv::Mat yolorecognition::QImage2Mat(const QImage& image)
 
     return mat_clone;
 }
-//cv::Mat yolorecognition::QImage2Mat(const QImage& image)
-//{
-//    if (image.format() == QImage::Format_RGB888)
-//    {
-//        cv::Mat mat(image.height(),
-//                    image.width(),
-//                    CV_8UC3,
-//                    const_cast<uchar*>(image.bits()),
-//                    image.bytesPerLine());
-
-//        return mat.clone();  // 深拷贝，线程安全
-//    }
-
-//    QImage converted = image.convertToFormat(QImage::Format_RGB888);
-
-//    cv::Mat mat(converted.height(),
-//                converted.width(),
-//                CV_8UC3,
-//                const_cast<uchar*>(converted.bits()),
-//                converted.bytesPerLine());
-
-//    return mat.clone();
-//}
 
 QImage yolorecognition::matToQImage(const cv::Mat& mat)
 {

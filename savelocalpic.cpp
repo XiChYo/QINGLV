@@ -13,9 +13,6 @@ saveLocalpic::saveLocalpic(QObject* parent)
 
 void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName,const int timefortest)
 {
-
-//    if (testint == 1)
-//    {
     times += 1;
     QImage imgReal = img;  // 把图像复制的代码放到这里来，不要放在相机线程
     imgReal.detach();  // 转换深拷贝
@@ -37,5 +34,4 @@ void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName,c
     bool ok = imgReal.save(filePath, "JPG", 60);
     emit forOSSPathSig(filePath, 1); // 保存到本地的图片将命名发送到云端上传线程
     testint = 0;
-//    }
 }
