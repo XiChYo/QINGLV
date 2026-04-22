@@ -53,10 +53,9 @@ private:
     RuntimeConfig m_cfg;
     SpeedSample   m_lastSpeed;
 
-    // 已派发但尚未被 BoardWorker 完全执行的任务,key=trackId
+    // 已派发但尚未被 BoardWorker 完全执行的任务,key=trackId。
+    // 仅保留"当前还能产出 pulse"的任务:空 pulse(如物体已越过喷阀线)不入 pending。
     QMap<int, SortTask>                m_pending;
-    QMap<int, QVector<ValvePulse>>     m_lastPulses;
-    QMap<int, float>                   m_lastPulseSpeed;  // 派发时的速度,用于重算触发判定
 
     // arm stub CSV 文件句柄
     QFile*       m_armCsvFile = nullptr;

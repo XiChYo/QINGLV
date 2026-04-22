@@ -112,7 +112,8 @@ void DispatcherTest::valveMode_returnsEmpty_whenObjectAlreadyPastValveLine()
     dsp.onSortTask(task);
 
     QCOMPARE(enq.count(), 0);
-    QCOMPARE(warn.count(), 1);   // Dispatcher 会 emit warning(empty pulse list)
+    QCOMPARE(warn.count(), 1);              // 空脉冲 -> 发告警
+    QCOMPARE(dsp.m_pending.size(), 0);      // 空脉冲不进 pending
 }
 
 void DispatcherTest::valveMode_cancelPulses_onSessionStop()

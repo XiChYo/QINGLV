@@ -30,13 +30,14 @@ void Dispatcher::onSessionStart(const RuntimeConfig& cfg)
     m_cfg           = cfg;
     m_lastSpeed     = {};
     m_pending.clear();
-    m_lastPulses.clear();
-    m_lastPulseSpeed.clear();
     m_sessionActive = true;
 
-    if (!openArmCsv()) {
-        LOG_ERROR(QString("Dispatcher: arm_stub_csv open failed path=%1")
-                  .arg(cfg.armStubCsv));
+    // CSV 仅在 Arm 模式下打开;Valve 模式下空路径很常见,不应报错日志污染。
+    if (cfg.sorterMode == RuntimeConfig::SorterMode::Arm) {
+        if (!openArmCsv()) {
+            LOG_ERROR(QString("Dispatcher: arm_stub_csv open failed path=%1")
+                      .arg(cfg.armStubCsv));
+        }
     }
 
     LOG_INFO(QString("Dispatcher sessionStart mode=%1 valve_distance=%2 min_cmd_interval=%3")
@@ -52,8 +53,6 @@ void Dispatcher::onSessionStop()
         emit cancelPulses(it.key());
     }
     m_pending.clear();
-    m_lastPulses.clear();
-    m_lastPulseSpeed.clear();
     m_lastSpeed = {};
     m_sessionActive = false;
     closeArmCsv();
@@ -73,14 +72,20 @@ void Dispatcher::onSpeedSample(const SpeedSample& s)
     const float thresh   = std::max(1, m_cfg.valveSpeedRecalcPct) / 100.0f;
     if (delta <= thresh) return;
 
+    // 速度突变:对还有潜在未发完 pulse 的任务整体重算一次。
+    // 重算后仍然为空(物体已彻底越过喷阀线)的任务,直接从 pending 移除。
+    QVector<int> drop;
     for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
         const int trackId = it.key();
         emit cancelPulses(trackId);
         const QVector<ValvePulse> pulses = computePulses(it.value(), s.speedMmPerMs);
-        m_lastPulses[trackId]     = pulses;
-        m_lastPulseSpeed[trackId] = s.speedMmPerMs;
-        if (!pulses.isEmpty()) emit enqueuePulses(pulses, trackId);
+        if (pulses.isEmpty()) {
+            drop.push_back(trackId);
+            continue;
+        }
+        emit enqueuePulses(pulses, trackId);
     }
+    for (int id : drop) m_pending.remove(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -100,14 +105,14 @@ void Dispatcher::onSortTask(const SortTask& task)
                                           : m_cfg.nominalSpeedMs;
     const QVector<ValvePulse> pulses = computePulses(task, speed);
 
-    m_pending.insert(task.trackId, task);
-    m_lastPulses[task.trackId]     = pulses;
-    m_lastPulseSpeed[task.trackId] = speed;
-
     if (pulses.isEmpty()) {
-        emit warning(QString("Dispatcher: empty pulse list for trackId=%1").arg(task.trackId));
+        // 物体已越过喷阀线或 mask 为空 → 不入 pending,也不派发。
+        emit warning(QString("Dispatcher: empty pulse list for trackId=%1 (already past or empty mask)")
+                     .arg(task.trackId));
         return;
     }
+
+    m_pending.insert(task.trackId, task);
     emit enqueuePulses(pulses, task.trackId);
 }
 

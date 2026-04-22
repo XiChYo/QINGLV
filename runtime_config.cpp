@@ -63,8 +63,11 @@ RuntimeConfig loadRuntimeConfig(const QString& iniPath)
     s.beginGroup("belt");
     cfg.nominalSpeedMs           = s.value("nominal_speed_m_s",
                                            cfg.nominalSpeedMs).toFloat();
-    cfg.encoderPulseToMm         = s.value("encoder_pulse_to_mm",
-                                           cfg.encoderPulseToMm).toFloat();
+    // 新键(master 口径): encoder_raw_to_m_per_min,默认 0.502。
+    // 兼容旧键 encoder_pulse_to_mm:以 raw=单位的 "脉冲→mm/采样窗口" 口径已废弃,
+    // 若 ini 仍出现会被静默忽略(硬件实测证明 raw 是转速代理,不是脉冲计数)。
+    cfg.encoderRawToMPerMin      = s.value("encoder_raw_to_m_per_min",
+                                           cfg.encoderRawToMPerMin).toFloat();
     cfg.encoderRequestIntervalMs = s.value("encoder_request_interval_ms",
                                            cfg.encoderRequestIntervalMs).toInt();
     s.endGroup();

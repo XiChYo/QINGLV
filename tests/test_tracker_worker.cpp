@@ -62,8 +62,9 @@ class TrackerWorkerTest : public QObject
 {
     Q_OBJECT
 private slots:
-    void firstFrame_isDiscarded();
+    void firstFrame_registersAllAsGhosts();
     void newDet_createsActiveTrack();
+    void firstFrame_lingeringObjectIsSuppressedNextFrame();
     void repeatedDet_increasesUpdateCountAndTriggersSortTask_whenClassEnabled();
     void repeatedDet_doesNotTrigger_whenClassDisabled();
     void missCount_reachesThresholdAndTriggers_ifUpdateAlreadyEnough();
@@ -73,8 +74,10 @@ private slots:
     void rasterizeToBelt_scalesPixelToMmCorrectly();
 };
 
-void TrackerWorkerTest::firstFrame_isDiscarded()
+void TrackerWorkerTest::firstFrame_registersAllAsGhosts()
 {
+    // AC15 重定义:启动首帧里已经在视野的物体不能形成 track、不能触发分拣,
+    // 但必须作为 ghost 抑制同一物体在后续帧再次被识别。
     TrackerWorker trk;
     trk.onSessionStart(makeCfg());
     QSignalSpy spy(&trk, &TrackerWorker::sortTaskReady);
@@ -82,10 +85,35 @@ void TrackerWorkerTest::firstFrame_isDiscarded()
     DetectedFrame f = makeFrame(100, 640, 480, {makeDet(1, 0.9f, 10, 10, 40, 40)});
     trk.onFrameInferred(f);
 
-    QCOMPARE(trk.m_active.size(), 0);          // 首帧全丢
-    QCOMPARE(trk.m_firstFrame, false);         // 首帧标志被翻转
-    QVERIFY(trk.m_tOriginMs > 0);              // 原点被记录
+    QCOMPARE(trk.m_active.size(), 0);          // 首帧不入 active
+    QCOMPARE(trk.m_ghosts.size(), 1);          // 首帧全进 ghost
+    QCOMPARE(trk.m_firstFrame, false);
+    QVERIFY(trk.m_tOriginMs > 0);
     QCOMPARE(spy.count(), 0);                  // 未触发分拣
+}
+
+void TrackerWorkerTest::firstFrame_lingeringObjectIsSuppressedNextFrame()
+{
+    // 首帧有一个物体 A,下一帧它还在视野同一位置,应被 ghost 抑制,
+    // 不会新建 track,也不会触发 SortTask。
+    RuntimeConfig cfg = makeCfg();
+    cfg.enabledClassIds.insert(1);
+    cfg.updateFramesY = 2;
+    // valveLineYb = realWidthMm + valveDistanceMm = 480 + 50 = 530 mm;
+    // ghost bbox.y = 10 raster => 20 mm。nominalSpeed=0,ghost 不会被 purge。
+    cfg.dispatchedPoolClearMm = 10000.0f;
+
+    TrackerWorker trk;
+    trk.onSessionStart(cfg);
+    QSignalSpy spy(&trk, &TrackerWorker::sortTaskReady);
+
+    trk.onFrameInferred(makeFrame(0, 640, 480,
+        {makeDet(1, 0.9f, 10, 10, 40, 40)}));  // 首帧入 ghost
+
+    trk.onFrameInferred(makeFrame(100, 640, 480,
+        {makeDet(1, 0.9f, 10, 10, 40, 40)}));  // 同位置 det,应被抑制
+    QCOMPARE(trk.m_active.size(), 0);
+    QCOMPARE(spy.count(), 0);
 }
 
 void TrackerWorkerTest::newDet_createsActiveTrack()

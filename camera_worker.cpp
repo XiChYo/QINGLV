@@ -2,6 +2,8 @@
 
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QRandomGenerator>
 #include <cstring>
 
 #include "logger.h"
@@ -9,7 +11,10 @@
 #include "bin/include/MvCameraControl.h"
 
 namespace {
-constexpr int kGrabTimeoutMs = 100;
+constexpr int kGrabTimeoutMs    = 100;
+// 连续丢帧累计到该阈值,或距上次告警超过 kDropWarnWindowMs 都会再发一次告警。
+constexpr int  kDropWarnThresh  = 5;
+constexpr int  kDropWarnWindowMs = 2000;
 }
 
 CameraWorker::CameraWorker(QObject* parent)
@@ -36,6 +41,13 @@ void CameraWorker::sessionStart(const RuntimeConfig& cfg)
     const int fps = cfg.softFps > 0 ? cfg.softFps : 2;
     m_intervalMs = std::max(1, 1000 / fps);
 
+    m_saveRaw        = cfg.saveRaw;
+    m_rawSampleRatio = std::max(0.0f, std::min(1.0f, cfg.rawSampleRatio));
+    m_saveDir        = cfg.saveDir;
+    if (m_saveRaw && !m_saveDir.isEmpty()) {
+        QDir().mkpath(m_saveDir);
+    }
+
     if (!openCameraLocked(cfg.cameraIp)) {
         emit cameraError(QStringLiteral("CameraWorker: open failed (ip=%1)").arg(cfg.cameraIp));
         return;
@@ -48,12 +60,15 @@ void CameraWorker::sessionStart(const RuntimeConfig& cfg)
     }
 
     m_inFlight.store(0);
-    m_lastCaptureMs = -1;
-    m_frameCounter  = 0;
-    m_sessionActive = true;
+    m_lastCaptureMs    = -1;
+    m_frameCounter     = 0;
+    m_droppedSinceWarn = 0;
+    m_lastWarnMs       = -1;
+    m_sessionActive    = true;
     m_tickTimer->start(m_intervalMs);
-    LOG_INFO(QString("CameraWorker started ip=%1 soft_fps=%2 (tick=%3ms)")
-             .arg(cfg.cameraIp).arg(fps).arg(m_intervalMs));
+    LOG_INFO(QString("CameraWorker started ip=%1 soft_fps=%2 (tick=%3ms) save_raw=%4 ratio=%5")
+             .arg(cfg.cameraIp).arg(fps).arg(m_intervalMs)
+             .arg(m_saveRaw ? "1" : "0").arg(m_rawSampleRatio));
 }
 
 void CameraWorker::sessionStop()
@@ -63,7 +78,29 @@ void CameraWorker::sessionStop()
     }
     closeCameraLocked();
     m_inFlight.store(0);
-    m_sessionActive = false;
+    m_sessionActive    = false;
+    m_droppedSinceWarn = 0;
+    m_lastWarnMs       = -1;
+}
+
+bool CameraWorker::probeConnection(const QString& ip)
+{
+    // MVS 允许多次 Initialize(幂等),这里仅做枚举检查,不打开设备。
+    if (MV_CC_Initialize() != MV_OK) return false;
+    MV_CC_DEVICE_INFO_LIST devList = {0};
+    MV_CC_EnumDevices(MV_GIGE_DEVICE, &devList);
+    for (unsigned i = 0; i < devList.nDeviceNum; ++i) {
+        MV_CC_DEVICE_INFO* dev = devList.pDeviceInfo[i];
+        if (!dev || dev->nTLayerType != MV_GIGE_DEVICE) continue;
+        MV_GIGE_DEVICE_INFO* gig = &dev->SpecialInfo.stGigEInfo;
+        const QString camIp = QString("%1.%2.%3.%4")
+            .arg((gig->nCurrentIp >> 24) & 0xFF)
+            .arg((gig->nCurrentIp >> 16) & 0xFF)
+            .arg((gig->nCurrentIp >> 8) & 0xFF)
+            .arg(gig->nCurrentIp & 0xFF);
+        if (camIp == ip) return true;
+    }
+    return false;
 }
 
 void CameraWorker::onFrameConsumed()
@@ -78,8 +115,19 @@ void CameraWorker::onTick()
 {
     if (!m_sessionActive || !m_hCam) return;
 
-    // 反压:下游忙则跳过本轮,不累积在途帧。
+    // F10 反压:下游忙则跳过本轮,累计并按窗口告警;不做静默丢帧。
     if (m_inFlight.load() >= kInFlightMax) {
+        m_droppedSinceWarn++;
+        const qint64 nowMs = pipeline::nowMs();
+        const bool timeExceeded = (m_lastWarnMs < 0) ||
+                                  (nowMs - m_lastWarnMs >= kDropWarnWindowMs);
+        if (m_droppedSinceWarn >= kDropWarnThresh && timeExceeded) {
+            emit warning(QStringLiteral("Camera backpressure: dropped %1 ticks")
+                         .arg(m_droppedSinceWarn));
+            LOG_INFO(QString("CameraWorker backpressure dropped=%1").arg(m_droppedSinceWarn));
+            m_droppedSinceWarn = 0;
+            m_lastWarnMs       = nowMs;
+        }
         return;
     }
 
@@ -90,10 +138,34 @@ void CameraWorker::onTick()
     }
 
     m_inFlight.fetch_add(1);
-    const QString fileName = QStringLiteral("img_%1_%2.jpg")
-        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss_zzz"))
-        .arg(m_frameCounter++, 6, 10, QChar('0'));
-    emit frameReadySig(img, tCapture, fileName);
+    // F16:根据 save_raw + 采样比决定是否落盘。命中则返回绝对路径,YoloWorker 据此同名落盘 result。
+    const QString rawPath = trySaveRawFrame(img, tCapture);
+    m_frameCounter++;
+    emit frameReadySig(img, tCapture, rawPath);
+}
+
+QString CameraWorker::trySaveRawFrame(const QImage& img, qint64 tCaptureMs)
+{
+    if (!m_saveRaw || m_rawSampleRatio <= 0.0f || m_saveDir.isEmpty() || img.isNull()) {
+        return QString();
+    }
+    const double roll = QRandomGenerator::global()->generateDouble();
+    if (roll >= static_cast<double>(m_rawSampleRatio)) {
+        return QString();
+    }
+    const QString tsDir = QDateTime::fromMSecsSinceEpoch(tCaptureMs)
+                              .toString("yyyyMMdd");
+    const QString dir = QStringLiteral("%1/%2").arg(m_saveDir, tsDir);
+    QDir().mkpath(dir);
+    const QString path = QStringLiteral("%1/raw_%2_%3.jpg")
+        .arg(dir)
+        .arg(QDateTime::fromMSecsSinceEpoch(tCaptureMs).toString("hhmmss_zzz"))
+        .arg(m_frameCounter, 6, 10, QChar('0'));
+    if (!img.save(path, "JPG", 90)) {
+        LOG_ERROR(QString("CameraWorker: save raw failed %1").arg(path));
+        return QString();
+    }
+    return path;
 }
 
 bool CameraWorker::openCameraLocked(const QString& ip)

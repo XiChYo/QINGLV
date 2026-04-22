@@ -76,7 +76,7 @@ dispatched_pool_clear_distance_mm=300
 
 [belt]
 nominal_speed_m_s=0.8
-encoder_pulse_to_mm=0.2
+encoder_raw_to_m_per_min=0.6
 encoder_request_interval_ms=250
 
 [sorter]
@@ -137,7 +137,7 @@ arm_stub_csv=/tmp/arm.csv
     QCOMPARE(cfg.dispatchedPoolClearMm, 300.0f);
 
     QCOMPARE(cfg.nominalSpeedMs, 0.8f);
-    QCOMPARE(cfg.encoderPulseToMm, 0.2f);
+    QCOMPARE(cfg.encoderRawToMPerMin, 0.6f);
     QCOMPARE(cfg.encoderRequestIntervalMs, 250);
 
     QCOMPARE(cfg.sorterMode, RuntimeConfig::SorterMode::Valve);

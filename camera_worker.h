@@ -30,13 +30,20 @@ public slots:
     void sessionStop();
     // 下游处理完一帧后回调,用于简单反压(避免积压)。
     void onFrameConsumed();
+    // F4 硬检查:枚举 MVS 设备,看目标 IP 是否在线。
+    // 主线程通过 BlockingQueuedConnection 调用,直接拿 bool 返回值;
+    // 调用期间阻塞 camera 线程事件循环,但时间极短(仅枚举)。
+    bool probeConnection(const QString& ip);
 
 signals:
     // 新采到的一帧。tCaptureMs 来自 pipeline::nowMs(),统一时钟。
-    // fileName 仅作日志/落盘使用(PR5 的 persistence 会用到)。
+    // fileName 非空表示本帧已被 raw 采样命中并落盘,YoloWorker 据此同名落盘 result;
+    // fileName 空表示本帧不落盘。
     void frameReadySig(const QImage& img, qint64 tCaptureMs, const QString& fileName);
     // 关键错误(相机无法打开、连续取帧失败等)。由 MainWindow 汇聚展示。
     void cameraError(const QString& msg);
+    // F10 反压告警:连续丢帧累计到一定数量时通知。msg 含已丢帧数。
+    void warning(const QString& msg);
 
 private slots:
     void onTick();
@@ -45,6 +52,8 @@ private:
     bool openCameraLocked(const QString& ip);
     void closeCameraLocked();
     bool grabOneFrame(QImage& outImg, qint64& outCaptureMs);
+    // 按 rawSampleRatio 决定当前帧是否落盘;返回落盘的绝对路径,未落盘返回空串。
+    QString trySaveRawFrame(const QImage& img, qint64 tCaptureMs);
 
     QTimer*        m_tickTimer     = nullptr;
     void*          m_hCam          = nullptr;
@@ -57,6 +66,15 @@ private:
     std::atomic<int> m_inFlight {0};
     static constexpr int kInFlightMax = 1;
     bool           m_sessionActive = false;
+
+    // F16 persistence 配置快照
+    bool           m_saveRaw         = false;
+    float          m_rawSampleRatio  = 0.1f;
+    QString        m_saveDir;
+
+    // F10 丢帧统计(反压引起的跳帧)
+    int            m_droppedSinceWarn = 0;
+    qint64         m_lastWarnMs       = -1;
 };
 
 #endif  // CAMERA_WORKER_H

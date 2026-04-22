@@ -136,7 +136,7 @@
 | 动作 | 通过标准 |
 |---|---|
 | 开机不接 USB,观察 | `log.txt` 有 `boardControl: open serial failed for ttyUSB0/ttyUSB1`,程序不崩 |
-| 接 USB 后点 Run | `log.txt` 有 `boardControl sessionStart tick=5ms enc=500ms pulse_to_mm=...` |
+| 接 USB 后点 Run | `log.txt` 有 `boardControl sessionStart tick=5ms enc=500ms raw2mPerMin=...` |
 | 观察编码器数据 | 每 ~500ms 一条 `encoderSpeedReceived` 原始帧;UI 的 `speed` 标签从 0 变为合理值 |
 | 手动停止(on_reset_clicked,PR5 接通后) | `log.txt` 有 `Session stopped.` 且后续无新的开阀帧打到 log |
 | 并发单元模拟:Dispatcher 同时下发 5 条 pulse,跨越 500ms | 所有 pulse 的开/关帧按顺序送出,无丢失;示波器/协议分析仪上帧间无 1 ms 以上空档异常 |
@@ -258,7 +258,26 @@
 - **已知 bug 修复**(本次总结新加到 commit 之外,尚未合入已有 PR):
   - `mainwindow.cpp::onSortTask` 访问了不存在的 `task.classId / target / areaMm2 / speedMmPerMsAtTrigger`,会让编译直接失败;现改为 `finalClassId / bboxBeltRasterPx / currentSpeedMmPerMs`。
   - `dispatcher.cpp::computePulses` 的"head/tail" 语义与 belt y 方向相反,原实现 `if (tTail <= tHead) return;` 恒成立 → **valve 路径永远无脉冲**。现已按 "yb_max 为前沿, yb_min 为后沿" 修正 `dy_head/dy_tail` 及 mask 扫描方向,单测 `DispatcherTest::valveMode_emitsEnqueuePulses_forReachableObject` 能复现该问题并锁定修复。
-  - 请 `git diff refactor/phase5-pipeline` 看这两个改动;跑 `pipeline_tests` 应当全绿。上板验证 valve 路径前必须合入这个修复,否则阀门一次都不会开。
+
+### 7.1 第二轮修复(本次批量 commit,上板前必合)
+
+| ID | 问题 | 严重度 | 修复文件 | 验证点 |
+|---|---|---|---|---|
+| B1 | `TrackerWorker::rasterizeToBelt` 与 `extrapolateBbox` 同时加位移,跨帧 IoU 恒对不齐 | 高 | `tracker_worker.cpp` | 速度>0 时连续两帧同一物体 update_count 能涨;`TrackerWorkerTest` 全绿 |
+| B2 | `onFrameInferred` 中 `trkUsed` 按 push_back 前长度构造,miss++ 循环按 push_back 后长度遍历,造成越界 | 高 | `tracker_worker.cpp` | ASAN/UB 扫描干净;`missCount_reachesThresholdAndTriggers_ifUpdateAlreadyEnough` 稳过 |
+| B11 | 首帧仅丢弃,lingering 物体进入下一帧仍被识别并触发分拣 | 中 | `tracker_worker.cpp` | 新增 `firstFrame_lingeringObjectIsSuppressedNextFrame` 单测 |
+| B4 | `Dispatcher::onSortTask` 无论 pulses 是否为空都写 `m_pending`,长时间运行只增不减 | 高 | `dispatcher.cpp` | `valveMode_returnsEmpty_whenObjectAlreadyPastValveLine` 追加 `m_pending.size()==0` 断言 |
+| B12 | Valve 模式下也强制打开 arm_stub CSV,空路径疯狂刷 LOG_ERROR | 低 | `dispatcher.cpp` | Valve 模式运行 5min,`log.txt` 不再出现 `arm_stub_csv open failed` |
+| B14 | `m_lastPulses / m_lastPulseSpeed` 只写不读的死字段 | 低 | `dispatcher.h/.cpp` | 代码审查;头文件已删,跑 `pipeline_tests` 绿 |
+| B5 | `YoloWorker::sessionStart` 每次都 release+init 模型,每次开工多等 3s+ | 中 | `yolo_worker.{h,cpp}` + `mainwindow.cpp` | 进程启动日志出现 `model loaded (persistent)`;连续 Run/Stop/Run,没有第二次 `yolo_session_init` 日志 |
+| B6 | `defaultLabelFromId` 恒 nullptr,叠加层只显示数字 class_id | 中 | `yolo_worker.cpp` | 用 `std::unordered_map<int,std::string>` 轻量注册表替代 1024-槽定长数组;overlay 图标签是 ini 里的中文名,未配置的 classId 回落到数字 id |
+| B10 | `save_raw`/`save_result` 只读配置不落盘 | 中 | `camera_worker.{h,cpp}` + `yolo_worker.cpp` | `save_raw=true`+`raw_sample_ratio=1.0` 时,`save_dir/yyyyMMdd/` 下出现 `raw_*.jpg`;启用 `save_result=true` 同目录出现同名 `result_*.jpg` |
+| B9 | `CameraWorker::onTick` 反压时静默丢帧 | 中 | `camera_worker.cpp` | 刻意堵塞下游(停 YoloWorker 或长曝光),`log.txt` 出现 `Camera backpressure: dropped N ticks`,状态栏同步告警 |
+| B7 | `MainWindow::startSession` 无硬/软检查,也不锁运行中 UI | 中 | `mainwindow.{h,cpp}` + `camera_worker.{h,cpp}` | 拔网线状态点 Run,状态栏显示 `启动失败:相机未连接`,session 保持 Idle;Running 中品类按钮全灰 |
+| B8 | `onPipelineWarning` 只写日志,UI 无感知 | 中 | `mainwindow.cpp` | 触发任一 warning(如空脉冲 SortTask),状态栏出现 `告警: ...` 5s |
+| B3 | 编码器 raw 语义未定论(瞬时/累计) | 高 | `boardcontrol.{h,cpp}` + `runtime_config.{h,cpp}` + `docs/design.md` | 按 master 口径收敛: raw(u16 BE) 为板卡内部采样好的"转速代理",`speed_m_per_min = raw * encoder_raw_to_m_per_min`(默认 0.502),`speed_mm_per_ms = m/s = m_per_min / 60`。不再需要差分或除采样窗口,`m_lastEncoderPulse/TMs` 已删。ini 键名由 `encoder_pulse_to_mm` 改为 `encoder_raw_to_m_per_min`,升级 ini 必改 |
+
+- 跑 `cd tests && ./pipeline_tests` 必须全部 PASS(含更新的 `firstFrame_registersAllAsGhosts` / `firstFrame_lingeringObjectIsSuppressedNextFrame` / `valveMode_returnsEmpty_whenObjectAlreadyPastValveLine` 新增断言)。
 
 ---
 

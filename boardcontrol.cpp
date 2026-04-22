@@ -156,7 +156,7 @@ void boardControl::onSessionStart(const RuntimeConfig& cfg)
 {
     m_valveTickIntervalMs      = std::max(1, cfg.tickIntervalMs);
     m_encoderRequestIntervalMs = std::max(50, cfg.encoderRequestIntervalMs);
-    m_encoderPulseToMm         = cfg.encoderPulseToMm;
+    m_encoderRawToMPerMin      = cfg.encoderRawToMPerMin;
 
     if (m_encoderTick) {
         if (m_encoderTick->interval() != m_encoderRequestIntervalMs) {
@@ -168,12 +168,10 @@ void boardControl::onSessionStart(const RuntimeConfig& cfg)
     }
     m_sessionActive = true;
     m_pending.clear();
-    m_lastEncoderPulse = -1;
-    m_lastEncoderTMs   = -1;
-    LOG_INFO(QString("boardControl sessionStart tick=%1ms enc=%2ms pulse_to_mm=%3")
+    LOG_INFO(QString("boardControl sessionStart tick=%1ms enc=%2ms raw2mPerMin=%3")
              .arg(m_valveTickIntervalMs)
              .arg(m_encoderRequestIntervalMs)
-             .arg(m_encoderPulseToMm));
+             .arg(m_encoderRawToMPerMin));
 }
 
 void boardControl::onSessionStop()
@@ -390,8 +388,14 @@ void boardControl::requestEncoderSpeed()
 
     // ---- PR3:解析为 SpeedSample ----
     if (rx.size() < 8) return;
-    // 协议:第 6、7 字节为编码器脉冲高/低字节。此处是"转速样本"而非"累计脉冲",
-    // 所以直接把 raw 值乘 encoder_pulse_to_mm 得到 mm/采样周期,再除以时间差拿 mm/ms。
+
+    // 协议(master 实测口径): 第 6、7 字节为 u16 big-endian 的"转速代理",
+    //   rotation      = (rx[6] << 8) | rx[7];
+    //   speed(m/min) = rotation * encoderRawToMPerMin;   // master 默认 0.502
+    //   speed(m/s)   = speed(m/min) / 60;
+    //   speed(mm/ms) = speed(m/s)   // 数值相等
+    // 因此 raw 既不是累计脉冲,也不是窗口增量脉冲,不需要差分或除以采样窗口。
+    // 若后续硬件确认其实是累计脉冲,再改此段为 (raw - lastRaw)/(tNow - lastTMs) 口径。
     const quint16 raw =
         (static_cast<quint8>(rx[6]) << 8) |
          static_cast<quint8>(rx[7]);
@@ -400,14 +404,9 @@ void boardControl::requestEncoderSpeed()
     SpeedSample s;
     s.tMs           = tNow;
     s.valid         = true;
-    // 简单估计:raw * pulse_to_mm 视为当前速度下瞬时 mm/采样(采样周期 ~ encoder_request_interval_ms)。
-    // 为了给上层一个单位统一的 mm/ms,除以采样周期。若采样间隔波动较大,下游可自己做平滑。
-    const float samplingMs = static_cast<float>(std::max(1, m_encoderRequestIntervalMs));
-    s.speedMmPerMs  = (raw * m_encoderPulseToMm) / samplingMs;
+    const float mPerMin = raw * m_encoderRawToMPerMin;
+    s.speedMmPerMs  = mPerMin / 60.0f;
     emit speedSample(s);
-
-    m_lastEncoderPulse = raw;
-    m_lastEncoderTMs   = tNow;
 }
 
 void boardControl::stopWork()

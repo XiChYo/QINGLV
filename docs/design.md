@@ -589,7 +589,10 @@ tick_interval_ms         = 5          ; BoardWorker 阀轮询间隔
 ; ============================================================================
 [belt]
 nominal_speed_m_s        = 0.5         ; fallback 速度
-encoder_pulse_to_mm      = 0.1         ; 单脉冲对应的 mm(E3 方案 x,手动标定)
+; master 口径: raw(u16 大端) 即板卡采样好的"瞬时转速代理",
+; speed_m_per_min = raw * encoder_raw_to_m_per_min (master 实测 0.502),
+; speed_mm_per_ms = m/s = m_per_min / 60。不需要差分 / 窗口除法。
+encoder_raw_to_m_per_min = 0.502
 encoder_request_interval_ms = 500
 
 ; ============================================================================

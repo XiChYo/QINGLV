@@ -48,7 +48,11 @@ struct RuntimeConfig
 
     // ---- belt & encoder ----
     float   nominalSpeedMs              = 0.5f;  // m/s
-    float   encoderPulseToMm            = 0.1f;
+    // 编码器 raw 语义(与 master 分支一致):raw 是板卡内部采样好的"瞬时转速代理",
+    //   speed_m_per_min = raw * encoderRawToMPerMin   (master 硬编码 0.502)
+    //   speed_mm_per_ms = speed_m_per_min / 60        (m/s 与 mm/ms 数值相同)
+    // 因此 raw 不是累计脉冲,也不是窗口增量脉冲,无需除以采样窗口或做差分。
+    float   encoderRawToMPerMin         = 0.502f;
     int     encoderRequestIntervalMs    = 500;
 
     // ---- sorter ----

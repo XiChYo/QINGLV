@@ -72,26 +72,27 @@ void TrackerWorker::rasterizeToBelt(const DetectedObject& det,
                                     cv::Rect& outBbox,
                                     float& outAreaMm2)
 {
-    // 1. 像素 bbox -> 物理 bbox(mm)
+    (void)tCaptureMs;  // 栅格化出来的 bbox 语义 = "tCapture 时刻相机视野内的物理坐标 (image-lab mm)"
+
+    // 1. 像素 bbox -> 物理 bbox(mm,image-lab 系)
     const float pxToMmX = m_cfg.realLengthMm / static_cast<float>(std::max(1, imgWidthPx));
     const float pxToMmY = m_cfg.realWidthMm  / static_cast<float>(std::max(1, imgHeightPx));
 
     const float bbox_xb_mm = det.bboxPx.x * pxToMmX;
-    const float bbox_yb0   = det.bboxPx.y * pxToMmY;  // 快照时刻的 y
+    const float bbox_yb_mm = det.bboxPx.y * pxToMmY;
     const float bbox_w_mm  = det.bboxPx.width  * pxToMmX;
     const float bbox_h_mm  = det.bboxPx.height * pxToMmY;
 
-    // 2. belt 位移外推:把 yb0 推到 t_now(这里 t_now = tCaptureMs,
-    //    因为栅格化时我们要的是"该帧采图瞬间"的 belt 坐标;t_capture 就是当时刻)
-    //    另外,首帧时 tOrigin 记下来用作相对零点,以免 t_offset 过大。
+    // 关键约定:栅格化只把像素换算为"该帧采图瞬间的 image-lab mm",不再叠加
+    // "tCapture - tOrigin" 的 belt 位移。原实现会在这里预先加上一次位移,
+    // 随后 extrapolateBbox 又按 (toT - fromT) 再加一次,造成跨帧 IoU 对不齐。
+    // 本处与 extrapolateBbox 必须保持"单一位移口径":
+    //   bbox_at(t) = rasterize(det, tCapture) + speed * (t - tCapture)
     if (m_tOriginMs < 0) m_tOriginMs = tCaptureMs;
-    const float speed    = currentSpeedMmPerMs();
-    const float dy_mm    = speed * static_cast<float>(tCaptureMs - m_tOriginMs);
-    const float bbox_yb  = bbox_yb0 + dy_mm;
 
-    // 3. 栅格化 bbox
+    // 2. 栅格化 bbox
     const int gx = static_cast<int>(std::round(bbox_xb_mm / m_mmPerPx));
-    const int gy = static_cast<int>(std::round(bbox_yb    / m_mmPerPx));
+    const int gy = static_cast<int>(std::round(bbox_yb_mm / m_mmPerPx));
     const int gw = std::max(1, static_cast<int>(std::round(bbox_w_mm / m_mmPerPx)));
     const int gh = std::max(1, static_cast<int>(std::round(bbox_h_mm / m_mmPerPx)));
     outBbox = cv::Rect(gx, gy, gw, gh);
@@ -184,10 +185,28 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
 {
     if (!m_sessionActive) return;
 
-    // F4:启动后第一帧全量丢弃
+    // F4 / AC15:启动首帧里已经在视野的物体一律按"已分拣幽灵"处理,
+    // 后续帧里它们被 IoU 抑制,不会形成新 track、也不会触发分拣。
+    // 幽灵会随 extrapolate 自然推过喷阀线 + 清除距离,再由 purgeGhosts 回收。
     if (m_firstFrame) {
         m_firstFrame = false;
         m_tOriginMs  = frame.tCaptureMs;
+        for (int i = 0; i < frame.objs.size(); ++i) {
+            cv::Mat mask;
+            cv::Rect bbox;
+            float areaMm2 = 0.0f;
+            rasterizeToBelt(frame.objs[i],
+                            frame.imgWidthPx, frame.imgHeightPx,
+                            frame.tCaptureMs, mask, bbox, areaMm2);
+            DispatchedGhost g;
+            g.maskBeltRaster   = mask;
+            g.bboxBeltRasterPx = bbox;
+            g.tCaptureMs       = frame.tCaptureMs;
+            g.finalClassId     = frame.objs[i].classId;  // 仅为日志可读
+            m_ghosts.push_back(g);
+        }
+        LOG_INFO(QString("TrackerWorker first frame suppressed %1 objs as ghosts")
+                 .arg(frame.objs.size()));
         return;
     }
 
@@ -275,8 +294,11 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         m_active.push_back(trk);
     }
 
-    // 5. 未匹配 track:miss++
-    for (int ti = 0; ti < m_active.size(); ++ti) {
+    // 5. 未匹配 track:miss++。
+    // 注意:此时 m_active 可能已经 push_back 过"未匹配 det 新建 track",
+    // 导致 m_active.size() > trkUsed.size(),不能用 m_active.size() 作边界。
+    // 新增 track 天然视为"刚匹配过",missCount 已初始化为 0,这里不再处理它们。
+    for (int ti = 0; ti < trkUsed.size(); ++ti) {
         if (!trkUsed[ti]) m_active[ti].missCount += 1;
     }
 

@@ -104,11 +104,8 @@ private:
     // 从 cfg 缓存的运行期参数
     int     m_valveTickIntervalMs       = 5;
     int     m_encoderRequestIntervalMs  = 500;
-    float   m_encoderPulseToMm          = 0.1f;
-
-    // 编码器速度估计:用相邻两次读数差分 / 时间差
-    qint64  m_lastEncoderTMs     = -1;
-    qint64  m_lastEncoderPulse   = -1;
+    // master 口径: raw * encoderRawToMPerMin = m/min;无需差分 / 窗口除法。
+    float   m_encoderRawToMPerMin       = 0.502f;
 };
 
 #endif // BOARDCONTROL_H

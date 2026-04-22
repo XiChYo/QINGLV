@@ -9,6 +9,7 @@
 #include <QRandomGenerator>
 #include <QMessageBox>
 #include <QProcess>
+#include <QStatusBar>
 #include <memory>
 #include <QGridLayout>
 #include <QRandomGenerator>
@@ -157,6 +158,9 @@ MainWindow::MainWindow(QWidget *parent)
                 m_cameraWorker, &QObject::deleteLater);
         connect(m_cameraWorker, &CameraWorker::cameraError,
                 this, &MainWindow::cameraerrorMegSig, Qt::QueuedConnection);
+        // F10 反压告警汇入告警总线
+        connect(m_cameraWorker, &CameraWorker::warning,
+                this, &MainWindow::onPipelineWarning, Qt::QueuedConnection);
 
         // ---- 新管道:YoloWorker ----
         m_yoloWorker = new YoloWorker;
@@ -256,6 +260,13 @@ MainWindow::MainWindow(QWidget *parent)
         m_yoloThread->start();
         m_trackerThread->start();
         m_dispatcherThread->start();
+
+        // F8:进程启动后即把 rknn 模型加载进常驻 session,避免首次 Run 等待 >3s。
+        if (!m_cfg.modelPath.isEmpty()) {
+            QMetaObject::invokeMethod(m_yoloWorker, "preloadModel",
+                                      Qt::QueuedConnection,
+                                      Q_ARG(QString, m_cfg.modelPath));
+        }
 
         // Session 由 Run 按钮显式触发,构造期仅完成线程/连线就位。
     }catch(std::exception& e)
@@ -537,12 +548,46 @@ bool MainWindow::startSession()
     // 1) 刷新 UI 勾选 → m_cfg.enabledClassIds
     refreshEnabledClassIdsFromUi();
 
-    // 2) 依次 sessionStart:
-    //    Board → Tracker → Dispatcher(消费者就位)→ Yolo → Camera(生产者)
-    if (!m_boardThread || !m_boardThread->isRunning()) {
-        LOG_ERROR("startSession: board thread not running.");
+    // 2) F4 硬检查:相机必须在线,否则直接拒绝进入 Running。
+    if (!m_cameraWorker || !m_cameraThread || !m_cameraThread->isRunning()) {
+        const QString msg = QStringLiteral("启动失败:相机线程未就绪");
+        LOG_ERROR(msg);
+        statusBar()->showMessage(msg, 5000);
         return false;
     }
+    bool camOk = false;
+    QMetaObject::invokeMethod(m_cameraWorker, "probeConnection",
+                              Qt::BlockingQueuedConnection,
+                              Q_RETURN_ARG(bool, camOk),
+                              Q_ARG(QString, m_cfg.cameraIp));
+    if (!camOk) {
+        const QString msg = QStringLiteral("启动失败:相机未连接(ip=%1)").arg(m_cfg.cameraIp);
+        LOG_ERROR(msg);
+        statusBar()->showMessage(msg, 5000);
+        return false;
+    }
+
+    // 3) F4 软检查:连续打告警,但不阻断启动。
+    if (m_cfg.enabledClassIds.isEmpty()) {
+        const QString msg = QStringLiteral("提示:未选择任何品类,本次运行不会触发分拣");
+        LOG_ERROR(msg);
+        statusBar()->showMessage(msg, 5000);
+    }
+    // 速度有效性留待首个 SpeedSample 到达后再判断(编码器初次会返回 0)。
+
+    // 4) 板卡线程校验(硬)
+    if (!m_boardThread || !m_boardThread->isRunning()) {
+        const QString msg = QStringLiteral("启动失败:板卡线程未就绪");
+        LOG_ERROR(msg);
+        statusBar()->showMessage(msg, 5000);
+        return false;
+    }
+
+    // 5) AC13/AC14 锁定 UI 参数控件(品类按钮是目前唯一会影响运行时行为的控件)。
+    setRuntimeControlsEnabled(false);
+
+    // 6) 依次 sessionStart:
+    //    Board → Tracker → Dispatcher(消费者就位)→ Yolo → Camera(生产者)
     QMetaObject::invokeMethod(m_board, "onSessionStart", Qt::QueuedConnection,
                               Q_ARG(RuntimeConfig, m_cfg));
     QMetaObject::invokeMethod(m_tracker, "onSessionStart", Qt::QueuedConnection,
@@ -555,6 +600,8 @@ bool MainWindow::startSession()
                               Q_ARG(RuntimeConfig, m_cfg));
 
     m_sessionState = SessionState::Running;
+    statusBar()->showMessage(
+        QStringLiteral("运行中(已选品类 %1 项)").arg(m_cfg.enabledClassIds.size()));
     LOG_INFO(QString("Session started. enabledClasses=%1")
              .arg(m_cfg.enabledClassIds.size()));
     return true;
@@ -583,8 +630,22 @@ void MainWindow::stopSession()
         QMetaObject::invokeMethod(m_board, "onSessionStop", Qt::BlockingQueuedConnection);
     }
 
+    // AC13/AC14 解锁 UI 参数控件
+    setRuntimeControlsEnabled(true);
+
     m_sessionState = SessionState::Idle;
+    statusBar()->showMessage(QStringLiteral("已停止"), 3000);
     LOG_INFO("Session stopped.");
+}
+
+void MainWindow::setRuntimeControlsEnabled(bool enabled)
+{
+    // 运行期不允许改变品类勾选(会导致实时过滤规则抖动)。
+    // 其它运行时敏感控件(分拣器模式、速度、fps、两个距离)目前只在 config.ini 里,
+    // 暂无 UI 元素;未来新增时在此处一并纳管。
+    for (QPushButton* btn : allButtons) {
+        if (btn) btn->setEnabled(enabled);
+    }
 }
 
 void MainWindow::on_powerbutton_clicked()
@@ -638,6 +699,8 @@ void MainWindow::onArmStubDispatched(int trackId, int classId,
 void MainWindow::onPipelineWarning(const QString& msg)
 {
     LOG_ERROR(QString("Pipeline warning: %1").arg(msg));
+    // F6:告警同时进状态栏,5 秒自动清除,避免刷屏盖掉正常状态。
+    statusBar()->showMessage(QStringLiteral("告警: %1").arg(msg), 5000);
 }
 
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)

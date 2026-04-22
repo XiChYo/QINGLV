@@ -144,6 +144,8 @@ private:
     bool startSession();
     // Stop/析构共用路径:按反向顺序 BlockingQueued sessionStop
     void stopSession();
+    // AC13/AC14:运行中锁定 / Idle 时解锁参数类控件(当前仅 allButtons)。
+    void setRuntimeControlsEnabled(bool enabled);
 
     QString logMsg;
     bool uploadOssSorF;
