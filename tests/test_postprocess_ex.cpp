@@ -3,8 +3,8 @@
 #include <cmath>
 #include <algorithm>
 
-#include "postprocess.h"
-#include "postprocess_ex.h"
+#include "pipeline/postprocess.h"
+#include "pipeline/postprocess_ex.h"
 
 namespace {
 

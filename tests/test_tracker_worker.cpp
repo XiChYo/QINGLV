@@ -3,7 +3,7 @@
 // 仅此 TU 生效,不影响生产代码。
 #define private public
 #define protected public
-#include "tracker_worker.h"
+#include "pipeline/tracker_worker.h"
 #undef private
 #undef protected
 
@@ -11,7 +11,7 @@
 #include <QSignalSpy>
 #include <opencv2/imgproc.hpp>
 
-#include "pipeline_clock.h"
+#include "pipeline/pipeline_clock.h"
 
 namespace {
 

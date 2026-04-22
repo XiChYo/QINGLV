@@ -4,8 +4,8 @@
 #include <QCoreApplication>
 #include <QtTest/QtTest>
 
-#include "pipeline_clock.h"
-#include "pipeline_types.h"
+#include "pipeline/pipeline_clock.h"
+#include "pipeline/pipeline_types.h"
 
 // 前向声明各测试类。为避免互相包含,各 test_*.cpp 里声明 getter 函数。
 QObject* makePipelineClockTest();

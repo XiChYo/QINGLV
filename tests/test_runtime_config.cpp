@@ -3,7 +3,7 @@
 #include <QFile>
 #include <QTextStream>
 
-#include "runtime_config.h"
+#include "config/runtime_config.h"
 
 class RuntimeConfigTest : public QObject
 {

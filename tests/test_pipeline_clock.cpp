@@ -1,6 +1,6 @@
 #include <QtTest/QtTest>
 #include <QThread>
-#include "pipeline_clock.h"
+#include "pipeline/pipeline_clock.h"
 
 class PipelineClockTest : public QObject
 {

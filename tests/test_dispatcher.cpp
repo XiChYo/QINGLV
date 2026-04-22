@@ -1,6 +1,6 @@
 #define private public
 #define protected public
-#include "dispatcher.h"
+#include "pipeline/dispatcher.h"
 #undef private
 #undef protected
 

@@ -9,92 +9,91 @@ CONFIG += ssl
 PKGCONFIG += libcurl
 PKGCONFIG += opencv4
 
-
 # The following define makes your compiler emit warnings if you use
 # any Qt feature that has been marked deprecated (the exact warnings
 # depend on your compiler). Please consult the documentation of the
 # deprecated API in order to know how to port your code away from it.
 DEFINES += QT_DEPRECATED_WARNINGS
+# DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000
 
-# You can also make your code fail to compile if it uses deprecated APIs.
-# In order to do so, uncomment the following line.
-# You can also select to disable deprecated APIs only up to a certain version of Qt.
-#DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
-
+# ---------------------------------------------------------------------------
+# 源码(按角色分组)
+# ---------------------------------------------------------------------------
 SOURCES += \
-    boardcontrol.cpp \
-    camera_worker.cpp \
-    dispatcher.cpp \
-    logger.cpp \
-    main.cpp \
-    mainwindow.cpp \
-    pipeline_clock.cpp \
-    postprocess_ex.cpp \
-    robotcontrol.cpp \
-    runtime_config.cpp \
-    savelocalpic.cpp \
-    tcpforrobot.cpp \
-    tracker_worker.cpp \
-    updatemanager.cpp \
-    uploadpictooss.cpp \
-    yolo_session.cpp \
-    yolo_worker.cpp
+    src/app/main.cpp \
+    src/app/mainwindow.cpp \
+    src/infra/logger.cpp \
+    src/config/runtime_config.cpp \
+    src/pipeline/boardcontrol.cpp \
+    src/pipeline/camera_worker.cpp \
+    src/pipeline/dispatcher.cpp \
+    src/pipeline/pipeline_clock.cpp \
+    src/pipeline/postprocess_ex.cpp \
+    src/pipeline/tracker_worker.cpp \
+    src/pipeline/yolo_session.cpp \
+    src/pipeline/yolo_worker.cpp \
+    src/legacy/robotcontrol.cpp \
+    src/legacy/savelocalpic.cpp \
+    src/legacy/tcpforrobot.cpp \
+    src/legacy/updatemanager.cpp \
+    src/legacy/uploadpictooss.cpp
 
 HEADERS += \
-    boardcontrol.h \
-    camera_worker.h \
-    dispatcher.h \
-    logger.h \
-    mainwindow.h \
-    library/mvs/includes/MvCameraControl.h \
-    pipeline_clock.h \
-    pipeline_types.h \
-    postprocess.h \
-    postprocess_ex.h \
-    robotcontrol.h \
-    runtime_config.h \
-    savelocalpic.h \
-    tcpforrobot.h \
-    tracker_worker.h \
-    updatemanager.h \
-    uploadpictooss.h \
-    yolo_session.h \
-    yolo_worker.h
-
+    src/app/mainwindow.h \
+    src/infra/logger.h \
+    src/config/runtime_config.h \
+    src/pipeline/boardcontrol.h \
+    src/pipeline/camera_worker.h \
+    src/pipeline/dispatcher.h \
+    src/pipeline/pipeline_clock.h \
+    src/pipeline/pipeline_types.h \
+    src/pipeline/postprocess.h \
+    src/pipeline/postprocess_ex.h \
+    src/pipeline/tracker_worker.h \
+    src/pipeline/yolo_session.h \
+    src/pipeline/yolo_worker.h \
+    src/legacy/robotcontrol.h \
+    src/legacy/savelocalpic.h \
+    src/legacy/tcpforrobot.h \
+    src/legacy/updatemanager.h \
+    src/legacy/uploadpictooss.h
 
 FORMS += \
-    mainwindow.ui
+    src/app/mainwindow.ui
+
+# ---------------------------------------------------------------------------
+# 本项目内部 include 统一以 src/ 为根:"pipeline/xxx.h"、"infra/logger.h" ...
+# 第三方 SDK 通过 INCLUDEPATH 暴露顶层,代码 #include <MvCameraControl.h>。
+# ---------------------------------------------------------------------------
+INCLUDEPATH += $$PWD/src
+INCLUDEPATH += $$PWD/third_party/mvs-sdk/include
+INCLUDEPATH += $$PWD/third_party/hr-robot-sdk/include
+DEPENDPATH  += $$PWD/src
+DEPENDPATH  += $$PWD/third_party/mvs-sdk/include
+DEPENDPATH  += $$PWD/third_party/hr-robot-sdk/include
 
 TRANSLATIONS += \
-    guangxuan_zh_CN.ts \
-    guangxuan_zh_EN.ts
-
-# Default rules for deployment.
-qnx: target.path = /tmp/$${TARGET}/bin
-else: unix:!android: target.path = /opt/$${TARGET}/bin
-!isEmpty(target.path): INSTALLS += target
+    i18n/guangxuan_zh_CN.ts \
+    i18n/guangxuan_zh_EN.ts
 
 DISTFILES += \
-    guangxuan_zh_EN.ts \
-    guangxuan_zh_CN.ts
+    i18n/guangxuan_zh_CN.ts \
+    i18n/guangxuan_zh_EN.ts
 
 RESOURCES += \
     resources.qrc
 
-unix:!macx: LIBS += -L$$PWD/bin/lib/aarch64/ -lMvCameraControl
+# ---------------------------------------------------------------------------
+# 部署 / 第三方库链接
+# ---------------------------------------------------------------------------
+qnx: target.path = /tmp/$${TARGET}/bin
+else: unix:!android: target.path = /opt/$${TARGET}/bin
+!isEmpty(target.path): INSTALLS += target
 
-INCLUDEPATH += $$PWD/bin/lib/aarch64
-DEPENDPATH += $$PWD/bin/lib/aarch64
+unix:!macx: LIBS += -L$$PWD/third_party/mvs-sdk/lib/aarch64/ -lMvCameraControl
+unix:!macx: LIBS += -L$$PWD/third_party/hr-robot-sdk/lib/ -lHR_Pro
 
-
-
-unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/ -lrknnrt
-
-INCLUDEPATH += $$PWD/../../../../../usr/include
-DEPENDPATH += $$PWD/../../../../../usr/include
-
-
-unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/ -lHR_Pro
-
-INCLUDEPATH += $$PWD/../../../../../usr/include
-DEPENDPATH += $$PWD/../../../../../usr/include
+# RKNN runtime 使用系统安装(/usr/include + /usr/lib,随 rknpu 驱动包安装)
+unix:!macx: LIBS += -L/usr/lib/ -lrknnrt
+INCLUDEPATH += /usr/include
+DEPENDPATH  += /usr/include
