@@ -67,7 +67,21 @@ bool yolo_session_init(const char* model_path, YoloSession& s)
         return false;
     }
 
-    rknn_set_core_mask(s.ctx, RKNN_NPU_CORE_AUTO);
+    // NPU 核心选择:优先 AUTO 让 runtime 做负载均衡,AUTO 在某些 RK3588 固件版本
+    // 上可能返回非 0(旧 librknnrt 不识别该枚举),此时退回 CORE_0 以保证推理能起来,
+    // 避免跟 master 版本行为上出现"悄无声息降级成单核"的差异。
+    int core_ret = rknn_set_core_mask(s.ctx, RKNN_NPU_CORE_AUTO);
+    if (core_ret != 0) {
+        std::fprintf(stderr,
+                     "[YoloSession] rknn_set_core_mask(AUTO) ret=%d, fallback to CORE_0\n",
+                     core_ret);
+        core_ret = rknn_set_core_mask(s.ctx, RKNN_NPU_CORE_0);
+        if (core_ret != 0) {
+            std::fprintf(stderr,
+                         "[YoloSession] rknn_set_core_mask(CORE_0) ret=%d, continue with default\n",
+                         core_ret);
+        }
+    }
 
     ret = rknn_query(s.ctx, RKNN_QUERY_IN_OUT_NUM, &s.io_num, sizeof(s.io_num));
     if (ret < 0 || s.io_num.n_input < 1 || s.io_num.n_output < 2) {
