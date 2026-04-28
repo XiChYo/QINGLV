@@ -59,14 +59,12 @@ private slots:
 
     void on_checkforNew_clicked();
 
-    void on_singleControl_triggered();
-    void on_multiControl_triggered();
     void on_speedInfo_triggered();
 
     void on_chan1_clicked();
 
 
-    void doTask(Task task);
+    void TrackerTask(Task task);
 
     void getAndsendA(int x);
 
@@ -122,6 +120,22 @@ private slots:
 
     void on_dless300_clicked();
 
+    void on_b1_clicked();
+
+    void on_b2_clicked();
+
+    void on_b3_clicked();
+
+    void on_b4_clicked();
+
+    void on_b5_clicked();
+
+    void on_b6_clicked();
+
+    void on_b7_clicked();
+
+    void on_b8_clicked();
+
 private:
     Ui::MainWindow *ui;
     QList<QPushButton*> allButtons; // 保存所有在物料选择生成的按钮
@@ -144,13 +158,13 @@ private:
     QGraphicsScene* scene;
     QGraphicsPixmapItem* pixmapItem;
 
-    camerathread* camThread; // 相机线程
+    camerathread* m_camThread; // 相机线程
 
-    uploadpictoOSS* ossThread; // oss线程
+    uploadpictoOSS* m_ossThread; // oss线程
 
-    saveLocalpic* savelocalpicThread; // 保存照片线程
+    saveLocalpic* m_savelocalpicThread; // 保存照片线程
 
-    yolorecognition* yolorecogThread; // 算法识别线程
+    yolorecognition* m_yolorecogThread; // 算法识别线程
 
     calDistance* m_calDistance; // 距离计算线程
 
@@ -158,11 +172,11 @@ private:
 
     robotControl* m_robot; // 机器人线程
 
-    tcpforrobot *m_tcpserverA; // 机器人通信线程
+    tcpforrobot *m_tcpserver; // 机器人通信线程
 
     QThread* threadPool;
     QThread* threadPool_yolo;
-    QThread* threadPool_robotA;
+    QThread* threadPool_robot;
 
     QString logMsg;
     bool uploadOssSorF;
@@ -180,7 +194,8 @@ private:
 
     void onEncoderSpeed(const QByteArray& frame);
 
-    std::thread m_thread;
+    std::thread m_trackerthread;
+
     bool m_running;
     float speed;
 
@@ -191,16 +206,10 @@ private:
     bool isBconnected = false;
 
 signals:
-    void singleControl(QString order);
     void batchControl(QString order);
     void requestEncoder();
     void yoloImg(const QImage& image);
 
-    void testinitRobot();
-    void testMoveRobot();
-    void tcpPosSigA(QByteArray data, float time);
-    void tcpPosSigB(QByteArray data, float time);
-    void tcpRobotSigA();
-    void isUseA();
+    void tcpRobotSig();
 };
 #endif // MAINWINDOW_H

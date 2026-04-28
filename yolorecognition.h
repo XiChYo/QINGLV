@@ -29,7 +29,7 @@ public:
 public slots:
     int recognition(const QImage& image,const int timefortest);
 signals:
-    void objPointSig(QPoint objPoint);
+    void ObjPointSig(QPoint objPoint, int objlength);
     void resultImgSig(const QImage& img);
 
     void pointSig(int x);

@@ -73,20 +73,17 @@ MainWindow::MainWindow(QWidget *parent)
         // 线程池
         threadPool = new QThread;
         threadPool_yolo = new QThread;
-        threadPool_robotA = new QThread;
+        threadPool_robot = new QThread;
 
         // OSS线程
-        ossThread = new uploadpictoOSS;
-        ossThread->moveToThread(threadPool);
+        m_ossThread = new uploadpictoOSS;
+        m_ossThread->moveToThread(threadPool);
 
         // boardcontrol
         boardControl* ctrl = new boardControl;
         ctrl->moveToThread(threadPool);
         connect(threadPool, &QThread::started,
                 ctrl, &boardControl::initSerial);
-
-        connect(this, &MainWindow::singleControl,
-                ctrl, &boardControl::singleBoardControl);
 
         connect(this, &MainWindow::batchControl,
                 ctrl, &boardControl::batchBoardControl);
@@ -98,70 +95,62 @@ MainWindow::MainWindow(QWidget *parent)
                 this, &MainWindow::onEncoderSpeed);
 
         // 保存本地文件线程
-        savelocalpicThread = new saveLocalpic;
-        savelocalpicThread->moveToThread(threadPool);
+        m_savelocalpicThread = new saveLocalpic;
+        m_savelocalpicThread->moveToThread(threadPool);
 
         // 摄像头线程
-        camThread = new camerathread;
-        connect(savelocalpicThread, &saveLocalpic::forOSSPathSig,
+        m_camThread = new camerathread;
+        connect(m_savelocalpicThread, &saveLocalpic::forOSSPathSig,
                 this, &MainWindow::uploadOSSPath);
-        connect(camThread, &camerathread::errorMegSig,
+        connect(m_camThread, &camerathread::errorMegSig,
                 this, &MainWindow::cameraerrorMegSig,Qt::QueuedConnection);
-        if (camThread->openCamera("192.168.0.20")) {
+        if (m_camThread->openCamera("192.168.0.20")) {
             LOG_INFO("Camera thread started");
-            camThread->start();
+            m_camThread->start();
         }
 
-        yolorecogThread = new yolorecognition;
-        yolorecogThread->moveToThread(threadPool_yolo);
+        m_yolorecogThread = new yolorecognition;
+        m_yolorecogThread->moveToThread(threadPool_yolo);
 
-        connect(camThread, &camerathread::frameReadySig,
-                yolorecogThread, &yolorecognition::recognition);
+        connect(m_camThread, &camerathread::frameReadySig,
+                m_yolorecogThread, &yolorecognition::recognition);
 
-        connect(yolorecogThread, &yolorecognition::resultImgSig,
+        connect(m_yolorecogThread, &yolorecognition::resultImgSig,
                 this, &MainWindow::updateFrame);
 
-        connect(yolorecogThread, &yolorecognition::pointSig,
+        connect(m_yolorecogThread, &yolorecognition::pointSig,
                 this, &MainWindow::getAndsendA);
 
-        //        connect(yolorecogThread, &yolorecognition::frameReadySig,
-        //                savelocalpicThread, &saveLocalpic::savelocalpicture);
+        //        connect(m_yolorecogThread, &yolorecognition::frameReadySig,
+        //                m_savelocalpicThread, &saveLocalpic::savelocalpicture);
 
 
         m_calDistance = new calDistance;
         m_calDistance->moveToThread(threadPool_yolo);
-        connect(yolorecogThread, &yolorecognition::objPointSig,
+        connect(m_yolorecogThread, &yolorecognition::ObjPointSig,
                 m_calDistance,&calDistance::distance);
-        connect(this,&MainWindow::isUseA,
-                m_calDistance, &calDistance::calATime);
 
         m_tracker = new ConveyorTracker;
-//        connect(m_calDistance,&calDistance::s_point,
-//                m_tracker, &ConveyorTracker::addTask);
+        connect(m_calDistance,&calDistance::readyPoint,
+                m_tracker, &ConveyorTracker::addTrackerTask);
 
-        connect(m_tracker, &ConveyorTracker::taskFinished,
-                this, &MainWindow::doTask);
+        connect(m_tracker, &ConveyorTracker::trackerTaskFinishedSig,
+                this, &MainWindow::TrackerTask);
 
         m_robot = new robotControl;
-        m_robot->moveToThread(threadPool_robotA);
-        connect(this, &MainWindow::testinitRobot,
-                m_robot, &robotControl::initRobot);
-        connect(this, &MainWindow::testMoveRobot,
-                m_robot, &robotControl::testRobotControl);
+        m_robot->moveToThread(threadPool_robot);
 
-        m_tcpserverA = new tcpforrobot;
-        m_tcpserverA->moveToThread(threadPool_robotA);
-        connect(this, &MainWindow::tcpRobotSigA,
-                m_tcpserverA, &tcpforrobot::startServer);
-        connect(this, &MainWindow::tcpPosSigA,
-                m_tcpserverA, &tcpforrobot::sendData);
-//        connect(m_calDistance,&calDistance::s_point,
-//                m_tcpserverA, &tcpforrobot::sendData);
-        connect(m_tcpserverA, &tcpforrobot::clientConnected,
+        m_tcpserver = new tcpforrobot;
+        m_tcpserver->moveToThread(threadPool_robot);
+        connect(this, &MainWindow::tcpRobotSig,
+                m_tcpserver, &tcpforrobot::startServer);
+//        connect(m_calDistance,&calDistance::readyPoint,
+//                m_tcpserver, &tcpforrobot::sendData);
+        connect(m_tcpserver, &tcpforrobot::clientConnected,
                 this, &MainWindow::chan1_chan);
 
         m_running = true;
-        m_thread = std::thread([this]()
+        m_trackerthread = std::thread([this]()
         {
                 while(m_running)
         {
@@ -173,7 +162,7 @@ MainWindow::MainWindow(QWidget *parent)
         // 线程池中的线程启动
         threadPool->start();
         threadPool_yolo->start();
-        threadPool_robotA->start();
+        threadPool_robot->start();
     }catch(std::exception& e)
     {
         logMsg = "MainFuc: " + QString::fromStdString(e.what());
@@ -184,7 +173,7 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete ui;
-    camThread->stop();  // 关闭相机线程
+    m_camThread->stop();  // 关闭相机线程
 
     if (threadPool) {
         threadPool->quit();   // 通知线程事件循环退出
@@ -193,9 +182,9 @@ MainWindow::~MainWindow()
         threadPool = nullptr;
     }
     m_running = false;
-    if(m_thread.joinable())
+    if(m_trackerthread.joinable())
     {
-        m_thread.join();
+        m_trackerthread.join();
     }
 }
 
@@ -649,8 +638,8 @@ void MainWindow::on_run_clicked()
 void MainWindow::on_powerbutton_clicked()
 {
     QApplication::quit();
-//    savelocalpicThread -> testint = 1;
-//    m_tracker.addTask(1.75);
+//    m_savelocalpicThread -> testint = 1;
+//    m_tracker.addTrackerTask(1.75);
 //    // 弹出询问框
 //    QMessageBox::StandardButton reply;
 //    reply = QMessageBox::question(this, "关机确认", "是否要关机？",
@@ -681,7 +670,7 @@ void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
     logMsg = "Upload image to OSS: " + filePath + "ImgClass" + ImgClass;
     LOG_INFO(logMsg);
 
-//    uploadOssSorF = ossThread->uploadImage(filePath, ImgClass);
+//    uploadOssSorF = m_ossThread->uploadImage(filePath, ImgClass);
 }
 
 void MainWindow::retryUploadFailedImages()
@@ -718,7 +707,7 @@ void MainWindow::retryUploadFailedImages()
             continue;
         }
 
-//        bool success = ossThread->uploadImage(filePath, ImgClass);
+//        bool success = m_ossThread->uploadImage(filePath, ImgClass);
 
 //        if (!success)
 //        {
@@ -880,14 +869,6 @@ void MainWindow::on_checkforNew_clicked()
 //    updater->checkForUpdate();
 }
 
-void MainWindow::on_singleControl_triggered()
-{
-    emit singleControl("01 01 01");
-}
-void MainWindow::on_multiControl_triggered()
-{
-    emit batchControl("01 00 15");
-}
 void MainWindow::on_speedInfo_triggered()
 {
     emit requestEncoder();
@@ -906,23 +887,23 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
          static_cast<quint8>(frame[7]);
     speed = rotation * 0.502;
     QString speed_text = QString::number(int(speed)) + "m/min";
-//    camThread->captureIntervalMs = 1000;
+//    m_camThread->captureIntervalMs = 1000;
 
 //    if (speed < 1)
 //    {
-//        camThread->captureIntervalMs = 500;  // ms
+//        m_camThread->captureIntervalMs = 500;  // ms
 //    }else {
-//        camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000 / 3;  // ms
+//        m_camThread->captureIntervalMs = (1.00 / (speed/60)) * 1000 / 3;  // ms
 //    }
 
-//    qDebug()<< "camThread->captureIntervalMs"<<camThread->captureIntervalMs;
+//    qDebug()<< "m_camThread->captureIntervalMs"<<m_camThread->captureIntervalMs;
 
     ui->speed->setText(speed_text);
 }
 
 void MainWindow::on_chan1_clicked()
 {
-    emit tcpRobotSigA();
+    emit tcpRobotSig();
     ui->chan1->setEnabled(false);
     ui->chan1->setText("等待机械臂连接");
 
@@ -975,7 +956,7 @@ void MainWindow::chan1_chan(QString ip)
 }
 
 
-void MainWindow::doTask(Task task)
+void MainWindow::TrackerTask(Task task)
 {
     qDebug() << "----------------------";
     // 1️判空
@@ -1006,7 +987,7 @@ void MainWindow::doTask(Task task)
 void MainWindow::getAndsendA(int x)
 {
 
-    if (m_tcpserverA->isConnected("192.168.0.30") || m_tcpserverA->isConnected("192.168.0.20"))
+    if (m_tcpserver->isConnected("192.168.0.30") || m_tcpserver->isConnected("192.168.0.20"))
     {
         qDebug()<<"X:"<<x;
 
@@ -1021,7 +1002,7 @@ void MainWindow::getAndsendA(int x)
 
         int baseTime;
 
-        if(!isBBusy && m_tcpserverA->isConnected("192.168.0.20")){
+        if(!isBBusy && m_tcpserver->isConnected("192.168.0.20")){
             if (grapPos < -300)
             {
                 grapPos -= ui->less300->text().toInt();
@@ -1048,14 +1029,14 @@ void MainWindow::getAndsendA(int x)
 
             QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
                 qDebug()<<"send BBB:"<<grapPosdata;
-                m_tcpserverA->sendToIP("192.168.0.20", grapPosdata);
+                m_tcpserver->sendToIP("192.168.0.20", grapPosdata);
             });
 
             QTimer::singleShot(10000, this, [this]() {
                 isBBusy = false;
                 qDebug() << "----B released----";
             });
-        }else if (!isABusy && m_tcpserverA->isConnected("192.168.0.30"))
+        }else if (!isABusy && m_tcpserver->isConnected("192.168.0.30"))
         {
             if (grapPos < -300)
             {
@@ -1103,7 +1084,7 @@ void MainWindow::getAndsendA(int x)
 
             QTimer::singleShot(mTime, this, [this, grapPosdata, mTime]() {
                 qDebug()<<"send AAA:"<<grapPosdata;
-                m_tcpserverA->sendToIP("192.168.0.30", grapPosdata);
+                m_tcpserver->sendToIP("192.168.0.30", grapPosdata);
             });
 
             QTimer::singleShot(5200, this, [this]() {
@@ -1258,4 +1239,44 @@ void MainWindow::on_dless300_clicked()
 {
     QString text = QString::number(ui->less300->text().toInt() - 5);
     ui->less300->setText(text);
+}
+
+void MainWindow::on_b1_clicked()
+{
+    emit batchControl("01 00 14");
+}
+
+void MainWindow::on_b2_clicked()
+{
+    emit batchControl("02 00 15");
+}
+
+void MainWindow::on_b3_clicked()
+{
+    emit batchControl("03 00 15");
+}
+
+void MainWindow::on_b4_clicked()
+{
+    emit batchControl("04 00 15");
+}
+
+void MainWindow::on_b5_clicked()
+{
+    emit batchControl("05 00 15");
+}
+
+void MainWindow::on_b6_clicked()
+{
+    emit batchControl("06 00 15");
+}
+
+void MainWindow::on_b7_clicked()
+{
+    emit batchControl("07 00 15");
+}
+
+void MainWindow::on_b8_clicked()
+{
+    emit batchControl("08 00 15");
 }

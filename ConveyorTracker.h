@@ -15,14 +15,14 @@ public:
     explicit ConveyorTracker(QObject *parent = nullptr);
 
     // 添加任务，返回任务ID
-    int addTask(const std::vector<ValveCmd>& cmds, float distance);
+    int addTrackerTask(const std::vector<ValveCmd>& cmds, float distance);
 
     // 更新输送带速度 m/min
     void updateSpeed(double speed);
 
 signals:
     // 当某个任务完成
-    void taskFinished(Task task);
+    void trackerTaskFinishedSig(Task task);
 
 private:
 

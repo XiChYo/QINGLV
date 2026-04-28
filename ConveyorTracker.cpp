@@ -8,10 +8,11 @@ ConveyorTracker::ConveyorTracker(QObject *parent)
     m_lastTime = m_timer.elapsed();
 }
 
-int ConveyorTracker::addTask(const std::vector<ValveCmd>& cmds, float distance)
+// 生成物料任务，保存到vector结构中
+int ConveyorTracker::addTrackerTask(const std::vector<ValveCmd>& cmds, float distance)
 {
     QMutexLocker locker(&m_mutex);
-    qDebug()<<"addTask: "<<distance;
+    qDebug()<<"addTrackerTask: "<<distance;
 
     Task task;
     task.id = m_nextId++;
@@ -24,6 +25,7 @@ int ConveyorTracker::addTask(const std::vector<ValveCmd>& cmds, float distance)
     return task.id;
 }
 
+// 更新当前皮带速度, 并计算当前任务的剩余距离
 void ConveyorTracker::updateSpeed(double speed)
 {
     QMutexLocker locker(&m_mutex);
@@ -53,8 +55,6 @@ void ConveyorTracker::updateSpeed(double speed)
         if (task.currentDistance >= task.targetDistance)
         {
             task.finished = true;
-
-//            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
             for (const auto& cmd : task.cmds)
             {
                 uint8_t valve = cmd.valveId;
@@ -67,12 +67,10 @@ void ConveyorTracker::updateSpeed(double speed)
                         .arg(low, 2, 16, QChar('0'))
                         .toUpper();
 
-//                qDebug() << "taskFinishedtaskFinishedtaskFinishedTask" << task.id << "Send:" << cmdStr;
-
             }
-//            qDebug()<<"taskFinishedtaskFinishedtaskFinished task.id: "<<task.id;
 
-            emit taskFinished(task);
+            // 当前任务剩余距离为0，发送对应任务的喷射许可信号
+            emit trackerTaskFinishedSig(task);
         }
     }
 

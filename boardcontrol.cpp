@@ -23,6 +23,7 @@ boardControl::~boardControl()
 
 // 串口底层
 
+// 打开控制板串口
 bool boardControl::openSerial()
 {
     int jud = 0;
@@ -76,6 +77,7 @@ void boardControl::closeSerial()
     }
 }
 
+// 写串口
 bool boardControl::writeFrame(const QByteArray& frame, int speedOrjet)
 {
     if (speedRead == false && speedOrjet == 3){
@@ -95,6 +97,7 @@ bool boardControl::writeFrame(const QByteArray& frame, int speedOrjet)
     return ret;
 }
 
+// 读串口
 bool boardControl::readFrame(QByteArray& frame, int timeoutMs)
 {
     const QByteArray head("\xAA\x55\x11\x05\x03\x0A", 6);
@@ -181,9 +184,10 @@ void boardControl::initSerial()
     m_speedTimer->start(500);
 }
 
+// 单通道控制，不常用
 void boardControl::singleBoardControl(QString order)
 {
-    qDebug() << "speedRead:false";
+//    qDebug() << "speedRead:false";
     QMutexLocker locker(&m_serialMutex);
     speedRead = false;
     m_speedTimer->stop();
@@ -228,9 +232,10 @@ void boardControl::singleBoardControl(QString order)
 
     speedRead = true;
     m_speedTimer->start();
-    qDebug() << "speedRead:true";
+//    qDebug() << "speedRead:true";
 }
 
+// 构建指令帧
 QByteArray boardControl::buildControlFrame(const QByteArray& field)
 {
     // 固定头
@@ -267,12 +272,12 @@ QByteArray boardControl::buildControlFrame(const QByteArray& field)
     return frame;
 }
 
-
+// 批量控制
 void boardControl::batchBoardControl(QString order)
 {
     if (busy) return;
     busy = true;
-    qDebug() << "speedRead:false";
+//    qDebug() << "speedRead:false";
     QMutexLocker locker(&m_serialMutex);
     speedRead = false;
     m_speedTimer->stop();
@@ -313,9 +318,10 @@ void boardControl::batchBoardControl(QString order)
     speedRead = true;
     busy = false;
     m_speedTimer->start();
-    qDebug() << "speedRead:true";
+//    qDebug() << "speedRead:true";
 }
 
+// 构建批量控制开启指令帧
 QByteArray boardControl::buildBatchOpenFrame(const QByteArray& field)
 {
     quint8 b6 = static_cast<quint8>(field[0]);
@@ -328,6 +334,7 @@ QByteArray boardControl::buildBatchOpenFrame(const QByteArray& field)
     return buildBatchFrameCore(b6, bitCount, b8, b9);
 }
 
+// 构建批量控制关闭指令帧
 QByteArray boardControl::buildBatchCloseFrame(const QByteArray& field)
 {
     quint8 b6 = static_cast<quint8>(field[0]);
@@ -339,6 +346,7 @@ QByteArray boardControl::buildBatchCloseFrame(const QByteArray& field)
     return buildBatchFrameCore(b6, b7, b8, b9);
 }
 
+// 构建批量控制指令全帧
 QByteArray boardControl::buildBatchFrameCore(
     quint8 b6,
     quint8 b7,
@@ -384,6 +392,7 @@ QByteArray boardControl::buildBatchFrameCore(
     return frame;
 }
 
+
 quint8 boardControl::countBits(quint8 v)
 {
     quint8 cnt = 0;
@@ -394,6 +403,7 @@ quint8 boardControl::countBits(quint8 v)
     return cnt;
 }
 
+// 请求速度
 void boardControl::requestEncoderSpeed()
 {
 

@@ -14,32 +14,24 @@ class calDistance : public QObject
 public:
     explicit calDistance(QObject* parent = nullptr);
 
-
-
-    float picLength = 2448;
-    float picWidth = 2048;
-    float realLength = 1.52;    // m
-    float realWidth = 1.27;  // mm
+    float pixelLength_X = 2448; // 总像素长度
+    float pixelWidth_Y = 2048;  // 总像素宽度
+    float realLength = 1.52;    // 实际长度, m
+    float realWidth = 1.27;  // 实际宽度, m
 
     float endToSpray = 0.7; // 相机视野末端到喷阀的距离 m
 
-    int getIndex(float realPosX);
-    std::vector<ValveCmd> generateCommands(int index);
+    int getIndex(float realPositionX);
+    std::vector<ValveCmd> generateCommands(int index, int numsOfNozzles);
 
     double step = realLength / 72;
 
-    bool isUseA = false;
-
-
-    QTimer* timerA = nullptr;
 
 
 public slots:
-    void distance(const QPoint& corPoint);
-    void calATime();
+    void distance(const QPoint& corPoint, int objlength);
 signals:
-    void s_point(const std::vector<ValveCmd>& cmds, float realPosY);
-//    void s_point(QByteArray robotOrder, float time);
+    void readyPoint(const std::vector<ValveCmd>& cmds, float realPositionY);
 
 };
 

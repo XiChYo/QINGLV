@@ -594,16 +594,16 @@ QPoint yolorecognition::run_seg_predict(const RknnModelSession& session,
         draw_results(result_img, filtered_results);
             for (const auto& obj : filtered_results)
             {
-//                qDebug() << "label:" << obj.label
-//                         << "prob:" << obj.prob
-//                         << "box:"
-//                         << obj.box.x
-//                         << obj.box.y
-//                         << obj.box.width
-//                         << obj.box.height
-//                         << "mask size:"
-//                         << obj.mask.cols << "x" << obj.mask.rows
-//                         << "empty:" << obj.mask.empty();
+                qDebug() << "label:" << obj.label
+                         << "prob:" << obj.prob
+                         << "box:"
+                         << obj.box.x
+                         << obj.box.y
+                         << obj.box.width
+                         << obj.box.height
+                         << "mask size:"
+                         << obj.mask.cols << "x" << obj.mask.rows
+                         << "empty:" << obj.mask.empty();
                 int a = obj.box.width * obj.box.height;
                 area = obj.box.width * obj.box.height;
 
@@ -616,9 +616,11 @@ QPoint yolorecognition::run_seg_predict(const RknnModelSession& session,
                 x = obj.box.x + obj.box.width / 2;
                 y = obj.box.y + obj.box.height / 2;                
 
-                QString now = QDateTime::currentDateTime().toString("--识别完成--yyyy-MM-dd HH:mm:ss.zzz || 第");
-                qDebug() << now << timefortest << "次";
-                emit objPointSig(QPoint(x,y));
+//                QString now = QDateTime::currentDateTime().toString("--识别完成--yyyy-MM-dd HH:mm:ss.zzz || 第");
+//                qDebug() << now << timefortest << "次";
+
+                emit ObjPointSig(QPoint(x,y), obj.box.width);
+
 //                if (area>=600000 && (obj.label == 8 || obj.label == 6) && (y <= 1300 && y >= 800))
 //                {
 
@@ -659,8 +661,8 @@ yolorecognition::yolorecognition(QObject* parent):QObject(parent)
 }
 int yolorecognition::recognition(const QImage& image,const int timefortest) {
 
-    QString now = QDateTime::currentDateTime().toString("--开始识别--yyyy-MM-dd HH:mm:ss.zzz || 第");
-    qDebug() << now << timefortest << "次";
+//    QString now = QDateTime::currentDateTime().toString("--开始识别--yyyy-MM-dd HH:mm:ss.zzz || 第");
+//    qDebug() << now << timefortest << "次";
 
     int topk_class_count = 80;
     bool draw_overlay = true;
@@ -709,7 +711,7 @@ int yolorecognition::recognition(const QImage& image,const int timefortest) {
     cv::imwrite("orig_img.jpg", orig_img);
     cv::imwrite("result_seg.jpg", result_img);
 
-//    emit objPointSig(corPoint);
+//    emit ObjPointSig(corPoint);
 
     return 0;
 }

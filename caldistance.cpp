@@ -2,83 +2,100 @@
 
 calDistance::calDistance(QObject* parent):QObject(parent)
 {
-    timerA = new QTimer(this);
-    timerA->setSingleShot(true);
-
-    connect(timerA, &QTimer::timeout, this, [this]() {
-        isUseA = false;
-        qDebug() << "A released";
-    });
 }
 
-void calDistance::distance(const QPoint& corPoint)
+// 计算喷阀指令和计算物料到喷阀的距离
+void calDistance::distance(const QPoint& corPoint, int objlength)
 {
     if (corPoint.x() == -1 && corPoint.y() == -1) return;
-    int picX = corPoint.x();
-    int picY = 2048 - corPoint.y();
+    int pixelX = corPoint.x();
+    int pixelY = 2048 - corPoint.y();
 
 
+    // 计算物料位置占相机视野的百分比
+    float percentageX = pixelX / pixelLength_X;
+    float percentageY = pixelY / pixelWidth_Y;
 
-    float percX = picX / picLength;
-    float percY = picY / picWidth;
+    // 计算物料现实的位置，单位m
+    float realPositionX = realLength * percentageX;  // real cor x
+    float realPositionY = realWidth * percentageY + endToSpray; // m
 
-    float realPosX = realLength * percX;  // real cor x
+    // 计算物理宽度，后面求该宽度需要多少喷孔进行喷射
+    float realobjwidth = realLength * (objlength / pixelLength_X);
 
-    float realPosY = realWidth * percY + endToSpray; // m
+    // 计算物理中心点位置对应哪一个喷孔
+    int nozzleIndex = getIndex(realPositionX);
 
-    int index = getIndex(realPosX);
+    // 计算物料宽度对应多少个喷孔
+    int numsOfNozzles = getIndex(realobjwidth);
 
-//    qDebug()<<"past x:"<<picX;
-//    qDebug()<<"past realPosX:"<<realPosX;
-//    qDebug()<<"***************past index:"<<index;
-
-    if (index > 58)
+    // 中心点对应喷孔的经验值补偿
+    if (nozzleIndex > 58)
     {
-        index += 1;
-    }else if(index < 14 && index >7)
+        nozzleIndex += 1;
+    }else if(nozzleIndex < 14 && nozzleIndex >7)
     {
-        index -= 1;
-    }else if(index < 7 && index >= 2)
+        nozzleIndex -= 1;
+    }else if(nozzleIndex < 7 && nozzleIndex >= 2)
     {
-        index -= 2;
+        nozzleIndex -= 2;
     }
 
-//    qDebug()<<"now x:"<<picX;
-//    qDebug()<<"now realPosX:"<<realPosX;
-//    qDebug()<<"--------------now index:"<<index;
+    // 根据中心喷孔和喷孔数量生成喷阀指令
+    const std::vector<ValveCmd>& results = generateCommands(nozzleIndex, numsOfNozzles);
+    qDebug()<<"numsOfNozzles:"<<numsOfNozzles;
 
-    const std::vector<ValveCmd>& results = generateCommands(index);
-
-//    emit s_point(results, realPosY);
+    // 发送当前物料喷射相关信息到主处理线程
+    emit readyPoint(results, realPositionY);
 
     return;
 
 }
 
-void calDistance::calATime()
+// 计算当前点位对应的喷孔位置
+int calDistance::getIndex(float realPositionX)
 {
-    isUseA = true;
-    timerA->start(7000); // 7秒后自动释放
-}
-
-int calDistance::getIndex(float realPosX)
-{
-    int index = std::round(realPosX / step);
+    int nozzleIndex = std::round(realPositionX / step);
 
     // 防止越界
-    if (index < 0) index = 0;
-    if (index >= 72) index = 72 - 1;
+    if (nozzleIndex < 0) nozzleIndex = 0;
+    if (nozzleIndex >= 72) nozzleIndex = 72 - 1;
 
-    return index;
+    return nozzleIndex;
 }
 
-std::vector<ValveCmd> calDistance::generateCommands(int index)
+// 生成喷射指令
+std::vector<ValveCmd> calDistance::generateCommands(int nozzleIndex, int numsOfNozzles)
 {
     std::map<int, uint16_t> valveMap;  // valveId -> mask
 
-    std::vector<int> indices = {index - 4, index - 3, index - 2, index - 1, index, index + 1, index + 2, index + 3, index + 4};
+    if (numsOfNozzles % 2 == 1)
+    {
+        numsOfNozzles += 1;
+    }
+    std::vector<int> nozzleIndices;
 
-    for (int idx : indices)
+    int nozzleStart = nozzleIndex - numsOfNozzles;
+    int nozzleEnd   = nozzleIndex + numsOfNozzles;
+
+    // 边界限制：最小为 1，最大为 72
+    if (nozzleStart <= 0)
+    {
+        nozzleStart = 1;
+    }
+
+    if (nozzleEnd >= 73)
+    {
+        nozzleEnd = 72;
+    }
+
+    // 生成 nozzleIndices
+    for (int i = nozzleStart; i <= nozzleEnd; ++i)
+    {
+        nozzleIndices.push_back(i);
+    }
+
+    for (int idx : nozzleIndices)
     {
         if (idx < 1 || idx > 72)
             continue;

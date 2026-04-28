@@ -139,8 +139,8 @@ void camerathread::run()
             int timefortest = 0;
             while (m_running && !isInterruptionRequested())
             {
-                QString now = QDateTime::currentDateTime().toString("--取图--yyyy-MM-dd HH:mm:ss.zzz || 第");
-                qDebug() << now << timefortest << "次";
+//                QString now = QDateTime::currentDateTime().toString("--取图--yyyy-MM-dd HH:mm:ss.zzz || 第");
+//                qDebug() << now << timefortest << "次";
                 timefortest++;
 
                 // 时间没到，不取图
