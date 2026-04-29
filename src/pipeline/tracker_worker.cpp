@@ -16,6 +16,46 @@ struct AssocCandidate {
     int   trkIdx;
 };
 
+// 在同一全局栅格坐标系下合并两个二值 mask，输出 union mask + union bbox。
+static void mergeMasksUnion(const cv::Mat& maskA, const cv::Rect& bboxA,
+                            const cv::Mat& maskB, const cv::Rect& bboxB,
+                            cv::Mat& outMask, cv::Rect& outBbox)
+{
+    if (bboxA.area() <= 0 && bboxB.area() <= 0) {
+        outMask.release();
+        outBbox = cv::Rect();
+        return;
+    }
+    if (bboxA.area() <= 0 || maskA.empty()) {
+        outMask = maskB.clone();
+        outBbox = bboxB;
+        return;
+    }
+    if (bboxB.area() <= 0 || maskB.empty()) {
+        outMask = maskA.clone();
+        outBbox = bboxA;
+        return;
+    }
+
+    const cv::Rect uni = bboxA | bboxB;
+    if (uni.area() <= 0) {
+        outMask.release();
+        outBbox = cv::Rect();
+        return;
+    }
+
+    cv::Mat merged(uni.height, uni.width, CV_8UC1, cv::Scalar(0));
+
+    const cv::Rect dstA(bboxA.x - uni.x, bboxA.y - uni.y, bboxA.width, bboxA.height);
+    const cv::Rect dstB(bboxB.x - uni.x, bboxB.y - uni.y, bboxB.width, bboxB.height);
+
+    cv::bitwise_or(merged(dstA), maskA, merged(dstA));
+    cv::bitwise_or(merged(dstB), maskB, merged(dstB));
+
+    cv::threshold(merged, outMask, 0, 1, cv::THRESH_BINARY);
+    outBbox = uni;
+}
+
 }  // namespace
 
 TrackerWorker::TrackerWorker(QObject* parent) : QObject(parent) {}
@@ -260,12 +300,21 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         if (detUsed[c.detIdx] || trkUsed[c.trkIdx]) continue;
         auto& trk = m_active[c.trkIdx];
         const auto& det = frame.objs[dets[c.detIdx].srcIdx];
-        trk.maskBeltRaster   = dets[c.detIdx].mask;
-        trk.bboxBeltRasterPx = dets[c.detIdx].bbox;
+
+        // 关联成功后做历史 union 累积:把"旧 track 外推到当前时刻"与当前 det 融合。
+        const cv::Rect trkBboxAtNow = extrapolateBbox(
+            trk.bboxBeltRasterPx, trk.tCaptureMs, tNow);
+        cv::Mat mergedMask;
+        cv::Rect mergedBbox;
+        mergeMasksUnion(dets[c.detIdx].mask, dets[c.detIdx].bbox,
+                        trk.maskBeltRaster, trkBboxAtNow,
+                        mergedMask, mergedBbox);
+        trk.maskBeltRaster   = mergedMask;
+        trk.bboxBeltRasterPx = mergedBbox;
         trk.tCaptureMs       = tNow;
         trk.updateCount     += 1;
         trk.missCount        = 0;
-        trk.latestAreaMm2    = dets[c.detIdx].areaMm2;
+        trk.latestAreaMm2    = cv::countNonZero(trk.maskBeltRaster) * (m_mmPerPx * m_mmPerPx);
         // 类别投票:按面积加权
         trk.classAreaAcc[det.classId] = trk.classAreaAcc.value(det.classId, 0.0f)
                                       + dets[c.detIdx].areaMm2;
@@ -279,11 +328,21 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         const auto& det = frame.objs[dets[di].srcIdx];
 
         bool suppressed = false;
-        for (const auto& g : m_ghosts) {
+        for (int gi = 0; gi < m_ghosts.size(); ++gi) {
+            auto& g = m_ghosts[gi];
             const cv::Rect gNow = extrapolateBbox(g.bboxBeltRasterPx, g.tCaptureMs, tNow);
             if (maskIoU(dets[di].mask, dets[di].bbox, g.maskBeltRaster, gNow)
                 >= m_cfg.iouThreshold) {
-                suppressed = true;
+                // 与 ghost 命中时也做 union 累积,让抑制池跟随观测持续更新。
+                cv::Mat mergedMask;
+                cv::Rect mergedBbox;
+                mergeMasksUnion(dets[di].mask, dets[di].bbox,
+                                g.maskBeltRaster, gNow,
+                                mergedMask, mergedBbox);
+                g.maskBeltRaster   = mergedMask;
+                g.bboxBeltRasterPx = mergedBbox;
+                g.tCaptureMs       = tNow;
+                suppressed         = true;
                 break;
             }
         }

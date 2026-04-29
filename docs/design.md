@@ -418,8 +418,11 @@ for (iou, det, trk) in candidates:
 
 # 合并
 for (det, trk) in assigned:
-    trk.maskBeltRaster = det_raster.mask
-    trk.bboxBeltRasterPx = det_raster.bbox
+    trk_now = extrapolate(trk, t_now = frame.tCaptureMs)
+    merged_mask, merged_bbox = union_mask(det_raster.mask, det_raster.bbox,
+                                          trk_now.mask, trk_now.bbox)
+    trk.maskBeltRaster = merged_mask
+    trk.bboxBeltRasterPx = merged_bbox
     trk.tCaptureMs = frame.tCaptureMs
     trk.updateCount += 1
     trk.missCount = 0
@@ -428,8 +431,15 @@ for (det, trk) in assigned:
 # 未匹配检测 → 查已分拣池抑制
 for det in frame.objs:
     if det in used_dets: continue
-    if any(mask_iou(det_raster, ghost) >= iou_threshold for ghost in m_ghosts):
-        # 直接丢弃
+    hit = first ghost where mask_iou(det_raster, ghost) >= iou_threshold
+    if hit exists:
+        ghost_now = extrapolate(hit, t_now = frame.tCaptureMs)
+        merged_mask, merged_bbox = union_mask(det_raster.mask, det_raster.bbox,
+                                              ghost_now.mask, ghost_now.bbox)
+        hit.maskBeltRaster = merged_mask
+        hit.bboxBeltRasterPx = merged_bbox
+        hit.tCaptureMs = frame.tCaptureMs
+        # 仍不新建追踪
         continue
     # 新建追踪
     t = TrackedObject(...)

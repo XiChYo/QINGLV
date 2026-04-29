@@ -532,9 +532,9 @@ flowchart TD
 
     Raster --> Cand[建候选集:<br/>每个 det × active track<br/>把 trk bbox 按 speed × t-tCapture 外推到 tNow<br/>算 maskIoU]
     Cand --> Greedy[AssocCandidate 按 iou desc 排序<br/>detUsed / trkUsed 标记位<br/>贪心匹配 F13 贪心策略]
-    Greedy --> Merge[匹配命中:<br/>trk.mask/bbox←det<br/>trk.tCaptureMs=tNow<br/>updateCount++<br/>classAreaAcc += area]
+    Greedy --> Merge[匹配命中:<br/>trk_now 与 det 做 mask union 融合<br/>trk.mask/bbox←merged<br/>trk.tCaptureMs=tNow<br/>updateCount++<br/>classAreaAcc += area]
 
-    Merge --> New[未匹配 det 先查已分拣池:<br/>若与任一 ghost IoU≥阈值<br/>→ 丢弃 F13 已派发抑制<br/>否则新建 TrackedObject<br/>trackId++]
+    Merge --> New[未匹配 det 先查已分拣池:<br/>若与任一 ghost IoU≥阈值<br/>→ 该 det 与 ghost 做 union 融合并刷新时间戳<br/>不新建 track(F13 已派发抑制)<br/>否则新建 TrackedObject<br/>trackId++]
     New --> Miss[未匹配 trk:<br/>missCount++<br/>注意用 trkUsed.size 做边界<br/>不踩新 push 的]
     Miss --> Trig{条件 A/B:<br/>miss≥X 或 upd≥Y?}
     Trig -- no --> Purge

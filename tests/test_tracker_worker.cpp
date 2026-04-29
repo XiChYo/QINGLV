@@ -69,6 +69,8 @@ private slots:
     void repeatedDet_doesNotTrigger_whenClassDisabled();
     void missCount_reachesThresholdAndTriggers_ifUpdateAlreadyEnough();
     void ghostSuppression_preventsResortOfSameObject();
+    void ghostSuppression_hit_updatesGhostByMaskUnion();
+    void associatedDet_mergesMaskWithHistoricalTrack();
     void maskIoU_zeroOnDisjointBboxes();
     void maskIoU_oneOnIdentical();
     void rasterizeToBelt_scalesPixelToMmCorrectly();
@@ -225,6 +227,69 @@ void TrackerWorkerTest::ghostSuppression_preventsResortOfSameObject()
     QCOMPARE(trk.m_active.size(), 0);
     // 不会再触发新的 SortTask
     QCOMPARE(spy.count(), 1);
+}
+
+void TrackerWorkerTest::ghostSuppression_hit_updatesGhostByMaskUnion()
+{
+    RuntimeConfig cfg = makeCfg();
+    cfg.enabledClassIds.insert(1);
+    cfg.updateFramesY = 2;
+    cfg.dispatchedPoolClearMm = 10000.0f;
+
+    TrackerWorker trk;
+    trk.onSessionStart(cfg);
+
+    // 先让一个 track 触发分拣,进入 ghost 池
+    trk.onFrameInferred(makeFrame(0, 640, 480, {}));
+    trk.onFrameInferred(makeFrame(100, 640, 480,
+        {makeDet(1, 0.9f, 10, 10, 40, 40)}));
+    trk.onFrameInferred(makeFrame(200, 640, 480,
+        {makeDet(1, 0.9f, 10, 10, 40, 40)}));
+    QCOMPARE(trk.m_ghosts.size(), 1);
+    QCOMPARE(trk.m_ghosts[0].bboxBeltRasterPx.x, 5);
+    QCOMPARE(trk.m_ghosts[0].bboxBeltRasterPx.width, 20);
+
+    // 后续命中 ghost 的检测向右偏移,应被抑制且把 ghost 融合扩展
+    trk.onFrameInferred(makeFrame(300, 640, 480,
+        {makeDet(1, 0.9f, 20, 10, 40, 40)}));
+    QCOMPARE(trk.m_active.size(), 0);   // 仍被抑制,不新建 track
+    QCOMPARE(trk.m_ghosts.size(), 1);
+    QCOMPARE(trk.m_ghosts[0].bboxBeltRasterPx.x, 5);
+    QCOMPARE(trk.m_ghosts[0].bboxBeltRasterPx.width, 25);
+    QCOMPARE(cv::countNonZero(trk.m_ghosts[0].maskBeltRaster), 25 * 20);
+    QCOMPARE(trk.m_ghosts[0].tCaptureMs, static_cast<qint64>(300));
+}
+
+void TrackerWorkerTest::associatedDet_mergesMaskWithHistoricalTrack()
+{
+    RuntimeConfig cfg = makeCfg();
+    cfg.updateFramesY = 10;  // 避免第二次更新后立刻触发出轨
+    cfg.iouThreshold  = 0.3f;
+
+    TrackerWorker trk;
+    trk.onSessionStart(cfg);
+
+    // 首帧丢弃
+    trk.onFrameInferred(makeFrame(0, 640, 480, {}));
+
+    // 第一次出现:新建 track
+    trk.onFrameInferred(makeFrame(100, 640, 480,
+        {makeDet(1, 0.9f, 10, 10, 40, 40)}));
+    QCOMPARE(trk.m_active.size(), 1);
+    QCOMPARE(trk.m_active[0].bboxBeltRasterPx.x, 5);
+    QCOMPARE(trk.m_active[0].bboxBeltRasterPx.width, 20);
+
+    // 第二次出现:同一目标向右偏移,应与历史 track 关联并做 union 融合
+    trk.onFrameInferred(makeFrame(200, 640, 480,
+        {makeDet(1, 0.9f, 20, 10, 40, 40)}));
+    QCOMPARE(trk.m_active.size(), 1);
+    QCOMPARE(trk.m_active[0].updateCount, 2);
+
+    // mm_per_px=2, 且 realLength/Width 与图像像素一一对应:
+    // x: [10,50) -> [5,25), [20,60) -> [10,30), union => [5,30), width=25
+    QCOMPARE(trk.m_active[0].bboxBeltRasterPx.x, 5);
+    QCOMPARE(trk.m_active[0].bboxBeltRasterPx.width, 25);
+    QCOMPARE(cv::countNonZero(trk.m_active[0].maskBeltRaster), 25 * 20);
 }
 
 void TrackerWorkerTest::maskIoU_zeroOnDisjointBboxes()

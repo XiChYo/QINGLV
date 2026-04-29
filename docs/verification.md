@@ -172,6 +172,8 @@
 | PR4-06 | Tracker ghost 抑制重复分拣 | `pipeline_tests -select TrackerWorkerTest::ghostSuppression_preventsResortOfSameObject` | PASS;再次出现同位置物体不新增 active,不 emit 第二次 |
 | PR4-07 | Tracker maskIoU 边界 | `pipeline_tests -select TrackerWorkerTest::maskIoU_zeroOnDisjointBboxes`,`maskIoU_oneOnIdentical` | PASS,分别返回 0 / 1 |
 | PR4-08 | Tracker 栅格化公式 | `pipeline_tests -select TrackerWorkerTest::rasterizeToBelt_scalesPixelToMmCorrectly` | PASS;bbox 与 area 精确吻合 |
+| PR4-20 | Tracker 关联后 mask union 累积 | `pipeline_tests -select TrackerWorkerTest::associatedDet_mergesMaskWithHistoricalTrack` | PASS;关联后 `bbox/mask` 按 union 扩展,`updateCount` 正常累加 |
+| PR4-21 | Tracker ghost 命中后 union 更新 | `pipeline_tests -select TrackerWorkerTest::ghostSuppression_hit_updatesGhostByMaskUnion` | PASS;命中 ghost 的检测不新建 active,ghost 的 `bbox/mask/tCaptureMs` 被更新 |
 | PR4-09 | Dispatcher valve 可达物体出脉冲 | `pipeline_tests -select DispatcherTest::valveMode_emitsEnqueuePulses_forReachableObject` | PASS;`enqueuePulses` 发 1 次;`boardId==1`,`channelMask & 0x1`,`tOpenMs >= tCaptureMs`,`tCloseMs > tOpenMs` |
 | PR4-10 | Dispatcher valve 越线物体空脉冲 | `pipeline_tests -select DispatcherTest::valveMode_returnsEmpty_whenObjectAlreadyPastValveLine` | PASS;`enqueuePulses` 0 次,`warning` 1 次 |
 | PR4-11 | Dispatcher `onSessionStop` 级联 cancel | `pipeline_tests -select DispatcherTest::valveMode_cancelPulses_onSessionStop` | PASS;所有 pending 被 cancel |
