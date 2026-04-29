@@ -132,7 +132,7 @@ void YoloWorker::sessionStart(const RuntimeConfig& cfg)
     m_saveResult     = cfg.saveResult;
     m_saveDir        = cfg.saveDir;
 
-    // 类别中文名:写进 overlay 查找表,替代数字 id。
+    // 类别可读名:写进 overlay 查找表,替代数字 id。
     setClassLabels(cfg.classButtons);
 
     // 模型路径变化时才重载(设计上明确"不支持热切换",但这里仍做一次防御)。

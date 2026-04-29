@@ -704,7 +704,15 @@ void MainWindow::onArmStubDispatched(int trackId, int classId,
 void MainWindow::onPipelineWarning(const QString& msg)
 {
     LOG_ERROR(QString("Pipeline warning: %1").arg(msg));
-    // F6:告警同时进状态栏,5 秒自动清除,避免刷屏盖掉正常状态。
+    const qint64 now = pipeline::nowMs();
+    if (msg == m_lastWarningMsg &&
+        m_lastWarningShownMs >= 0 &&
+        now - m_lastWarningShownMs < 1000) {
+        return;
+    }
+    m_lastWarningMsg = msg;
+    m_lastWarningShownMs = now;
+    // F6:相同告警 1 秒内不重复刷新状态栏,避免刷屏盖掉正常状态。
     statusBar()->showMessage(QStringLiteral("告警: %1").arg(msg), 5000);
 }
 

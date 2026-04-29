@@ -106,6 +106,7 @@ private:
     int     m_encoderRequestIntervalMs  = 500;
     // master 口径: raw * encoderRawToMPerMin = m/min;无需差分 / 窗口除法。
     float   m_encoderRawToMPerMin       = 0.502f;
+    int     m_encoderConsecutiveFailures = 0;
 };
 
 #endif // BOARDCONTROL_H

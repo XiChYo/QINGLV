@@ -86,7 +86,7 @@ void TrackerWorker::onSessionStop()
 
 void TrackerWorker::onSpeedSample(const SpeedSample& s)
 {
-    if (s.valid) m_lastSpeed = s;
+    m_lastSpeed = s;
 }
 
 float TrackerWorker::currentSpeedMmPerMs() const

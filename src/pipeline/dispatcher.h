@@ -6,6 +6,7 @@
 // 设计见 docs/design.md §3.6 / §4.4 / §4.5。
 // ============================================================================
 
+#include <QDate>
 #include <QFile>
 #include <QMap>
 #include <QObject>
@@ -60,6 +61,7 @@ private:
     // arm stub CSV 文件句柄
     QFile*       m_armCsvFile = nullptr;
     QTextStream* m_armCsvStream = nullptr;
+    QDate        m_armCsvDate;
 
     bool openArmCsv();
     void closeArmCsv();

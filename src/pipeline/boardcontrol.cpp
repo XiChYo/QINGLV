@@ -14,6 +14,12 @@
 #include "infra/logger.h"
 #include "pipeline/pipeline_clock.h"
 
+namespace {
+
+constexpr int kEncoderWarnFailureThreshold = 3;
+
+}  // namespace
+
 // ============================================================================
 // ctor / dtor
 // ============================================================================
@@ -157,6 +163,7 @@ void boardControl::onSessionStart(const RuntimeConfig& cfg)
     m_valveTickIntervalMs      = std::max(1, cfg.tickIntervalMs);
     m_encoderRequestIntervalMs = std::max(50, cfg.encoderRequestIntervalMs);
     m_encoderRawToMPerMin      = cfg.encoderRawToMPerMin;
+    m_encoderConsecutiveFailures = 0;
 
     if (m_encoderTick) {
         if (m_encoderTick->interval() != m_encoderRequestIntervalMs) {
@@ -379,15 +386,38 @@ void boardControl::requestEncoderSpeed()
 {
     static const QByteArray kEncReq =
         QByteArray::fromHex("AA 55 11 03 03 0A 21 55 AA");
-    writeFrame(kEncReq);
+    auto recordFailure = [this](const QString& reason) {
+        ++m_encoderConsecutiveFailures;
+        SpeedSample s;
+        s.tMs = pipeline::nowMs();
+        s.valid = false;
+        emit speedSample(s);
+        if (m_encoderConsecutiveFailures == kEncoderWarnFailureThreshold) {
+            emit errorOccured(
+                QString("encoder read invalid for %1 consecutive polls, using nominal speed fallback: %2")
+                    .arg(m_encoderConsecutiveFailures)
+                    .arg(reason));
+        }
+    };
+
+    if (!writeFrame(kEncReq)) {
+        recordFailure(QStringLiteral("write failed"));
+        return;
+    }
 
     QByteArray rx;
-    if (!readFrame(rx, 50)) return;
+    if (!readFrame(rx, 50)) {
+        recordFailure(QStringLiteral("read timeout"));
+        return;
+    }
 
     emit encoderSpeedReceived(rx);
 
     // ---- PR3:解析为 SpeedSample ----
-    if (rx.size() < 8) return;
+    if (rx.size() < 8) {
+        recordFailure(QStringLiteral("short frame"));
+        return;
+    }
 
     // 协议(master 实测口径): 第 6、7 字节为 u16 big-endian 的"转速代理",
     //   rotation      = (rx[6] << 8) | rx[7];
@@ -406,6 +436,7 @@ void boardControl::requestEncoderSpeed()
     s.valid         = true;
     const float mPerMin = raw * m_encoderRawToMPerMin;
     s.speedMmPerMs  = mPerMin / 60.0f;
+    m_encoderConsecutiveFailures = 0;
     emit speedSample(s);
 }
 

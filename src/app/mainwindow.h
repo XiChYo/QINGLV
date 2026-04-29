@@ -137,6 +137,8 @@ private:
     // ---- Session 状态机(PR5) ----
     enum class SessionState { Idle, Running, Stopping };
     SessionState m_sessionState = SessionState::Idle;
+    QString      m_lastWarningMsg;
+    qint64       m_lastWarningShownMs = -1;
 
     // 根据 UI 勾选态合成 enabledClassIds,更新进 m_cfg
     void refreshEnabledClassIdsFromUi();

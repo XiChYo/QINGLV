@@ -32,14 +32,6 @@ void Dispatcher::onSessionStart(const RuntimeConfig& cfg)
     m_pending.clear();
     m_sessionActive = true;
 
-    // CSV 仅在 Arm 模式下打开;Valve 模式下空路径很常见,不应报错日志污染。
-    if (cfg.sorterMode == RuntimeConfig::SorterMode::Arm) {
-        if (!openArmCsv()) {
-            LOG_ERROR(QString("Dispatcher: arm_stub_csv open failed path=%1")
-                      .arg(cfg.armStubCsv));
-        }
-    }
-
     LOG_INFO(QString("Dispatcher sessionStart mode=%1 valve_distance=%2 min_cmd_interval=%3")
              .arg(cfg.sorterMode == RuntimeConfig::SorterMode::Valve ? "valve" : "arm")
              .arg(cfg.valveDistanceMm)
@@ -60,10 +52,9 @@ void Dispatcher::onSessionStop()
 
 void Dispatcher::onSpeedSample(const SpeedSample& s)
 {
-    if (!s.valid) return;
-
     const float oldSpeed = m_lastSpeed.valid ? m_lastSpeed.speedMmPerMs : s.speedMmPerMs;
     m_lastSpeed = s;
+    if (!s.valid) return;
 
     // 速度重算判定:若偏差超过 cfg.valve.speed_recalc_threshold_pct,
     // 对 m_pending 里的每个任务 cancel + 重算 + enqueue。
@@ -268,6 +259,13 @@ void Dispatcher::dispatchArmStub(const SortTask& task)
     toArm(cx_mm, cy_mm, m_cfg.armBOriginXMm, m_cfg.armBOriginYMm,
           m_cfg.armBXSign, m_cfg.armBYSign, bX, bY);
 
+    if (!m_armCsvStream || m_armCsvDate != QDate::currentDate()) {
+        if (!openArmCsv()) {
+            LOG_ERROR(QString("Dispatcher: arm_stub_csv open failed path=%1")
+                      .arg(m_cfg.armStubCsv));
+        }
+    }
+
     if (m_armCsvStream) {
         *m_armCsvStream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
                         << ',' << task.trackId
@@ -290,15 +288,20 @@ bool Dispatcher::openArmCsv()
     if (m_cfg.armStubCsv.isEmpty()) return false;
 
     QFileInfo info(m_cfg.armStubCsv);
-    QDir dir = info.dir();
+    const QDate today = QDate::currentDate();
+    QDir dir(info.dir().filePath(today.toString("yyyyMMdd")));
     if (!dir.exists()) dir.mkpath(".");
 
-    m_armCsvFile = new QFile(m_cfg.armStubCsv);
+    const QString fileName = info.fileName().isEmpty()
+                                 ? QStringLiteral("arm_stub.csv")
+                                 : info.fileName();
+    m_armCsvFile = new QFile(dir.filePath(fileName));
     if (!m_armCsvFile->open(QIODevice::Append | QIODevice::Text)) {
         delete m_armCsvFile;
         m_armCsvFile = nullptr;
         return false;
     }
+    m_armCsvDate = today;
     m_armCsvStream = new QTextStream(m_armCsvFile);
     // 若文件为空,写表头
     if (m_armCsvFile->size() == 0) {
@@ -320,4 +323,5 @@ void Dispatcher::closeArmCsv()
         delete m_armCsvFile;
         m_armCsvFile = nullptr;
     }
+    m_armCsvDate = QDate();
 }
