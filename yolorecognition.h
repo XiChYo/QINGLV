@@ -28,7 +28,7 @@ public:
     QPoint m_point;
     QImage matToQImage(const cv::Mat& mat);
 public slots:
-    int recognition(const QImage& image,const int timefortest);
+    int recognition(const QImage& image, const QString& fileName, const int timefortest);
 signals:
     void ObjPointSig(QPoint objPoint, int objlength);
     void resultImgSig(const QImage& img, const QString& filename);

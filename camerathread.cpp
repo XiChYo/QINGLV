@@ -139,12 +139,13 @@ void camerathread::run()
             int timefortest = 0;
             while (m_running && !isInterruptionRequested())
             {
-//                QString now = QDateTime::currentDateTime().toString("--取图--yyyy-MM-dd HH:mm:ss.zzz || 第");
-//                qDebug() << now << timefortest << "次";
+                QString now = QDateTime::currentDateTime().toString("--取图--yyyy-MM-dd HH:mm:ss.zzz || 第");
+                QString timestrap = now + QString::number(timefortest) + "次";
+                LOG_INFO(timestrap);
                 timefortest++;
 
                 // 时间没到，不取图
-                QThread::msleep(500);
+                QThread::msleep(0);
 
                 // 取图
                 if (MV_CC_GetImageBuffer(m_hCam, &frame, 100) != MV_OK)
@@ -183,6 +184,7 @@ void camerathread::run()
                 }
 
                 QImage img(rgbBuffer, width, height, QImage::Format_RGB888);
+
                 QString fileName = QString("img_%1.jpg")
                     .arg(QDateTime::currentDateTime()
                          .toString("yyyyMMdd_hhmmss_zzz"));
@@ -193,8 +195,8 @@ void camerathread::run()
 //                QString saveDirPath = baseDir + "/saveRawPic/img_20260327_172735_817.jpg";
 //                bool ok = image.load(saveDirPath);
 
-//                emit frameReadySig(img, fileName, timefortest);
-                emit frameReadySig(img, timefortest);
+                emit frameReadySig(img, fileName, timefortest);
+//                emit frameReadySig(img, timefortest);
 
                 MV_CC_FreeImageBuffer(m_hCam, &frame);
             }

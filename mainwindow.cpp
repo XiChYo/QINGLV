@@ -115,16 +115,18 @@ MainWindow::MainWindow(QWidget *parent)
         connect(m_camThread, &camerathread::frameReadySig,
                 m_yolorecogThread, &yolorecognition::recognition);
 
+        connect(m_camThread, &camerathread::frameReadySig,
+                m_savelocalpicThread, &saveLocalpic::savelocalpicture);
+
         connect(m_yolorecogThread, &yolorecognition::resultImgSig,
                 this, &MainWindow::updateFrame);
+
         connect(m_yolorecogThread, &yolorecognition::resultImgSig,
                 m_savelocalpicThread, &saveLocalpic::saveresultpicture);
 
         connect(m_yolorecogThread, &yolorecognition::pointSig,
                 this, &MainWindow::getAndsendA);
 
-        connect(m_yolorecogThread, &yolorecognition::rawImgSig,
-                m_savelocalpicThread, &saveLocalpic::savelocalpicture);
 
 
         m_calDistance = new calDistance;
@@ -670,7 +672,7 @@ void MainWindow::updateFrame(const QImage &img)
 void MainWindow::uploadOSSPath(const QString& filePath, const int ImgClass)
 {
     logMsg = "Upload image to OSS: " + filePath + "ImgClass" + ImgClass;
-    LOG_INFO(logMsg);
+//    LOG_INFO(logMsg);
 
 //    uploadOssSorF = m_ossThread->uploadImage(filePath, ImgClass);
 }
@@ -877,6 +879,7 @@ void MainWindow::on_speedInfo_triggered()
 }
 void MainWindow::onEncoderSpeed(const QByteArray& frame)
 {
+
     // frame 是原始串口数据
 //    qDebug() << "onEncoderSpeed Encoder raw:" << frame.toHex(' ').toUpper();
 
@@ -889,6 +892,11 @@ void MainWindow::onEncoderSpeed(const QByteArray& frame)
          static_cast<quint8>(frame[7]);
     speed = rotation * 0.502;
     QString speed_text = QString::number(int(speed)) + "m/min";
+
+    QString now = QDateTime::currentDateTime().toString("--速度--yyyy-MM-dd HH:mm:ss.zzz");
+
+    QString timestrap = now + "线速度：" + speed_text + "   转速：" + QString::number(rotation) + "r/min" ;
+    LOG_INFO(timestrap);
 //    m_camThread->captureIntervalMs = 1000;
 
 //    if (speed < 1)

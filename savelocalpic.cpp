@@ -11,7 +11,7 @@ saveLocalpic::saveLocalpic(QObject* parent)
 {
 }
 
-void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName)
+void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName,const int timefortest)
 {
 //    times += 1;
     QImage imgReal = img;  // 把图像复制的代码放到这里来，不要放在相机线程
@@ -30,9 +30,9 @@ void saveLocalpic::savelocalpicture(const QImage& img, const QString& fileName)
         }
         dirInited = true;
     }
-    QString filePath = saveDirPath + "/" + fileName + ".jpg";
+    QString filePath = saveDirPath + "/" + fileName + "_" + QString::number(timefortest) + ".jpg";
     bool ok = imgReal.save(filePath, "JPG", 60);
-    emit forOSSPathSig(filePath, 1); // 保存到本地的图片将命名发送到云端上传线程
+//    emit forOSSPathSig(filePath, 1); // 保存到本地的图片将命名发送到云端上传线程
     testint = 0;
 }
 
