@@ -117,18 +117,20 @@ MainWindow::MainWindow(QWidget *parent)
 
         connect(m_yolorecogThread, &yolorecognition::resultImgSig,
                 this, &MainWindow::updateFrame);
+        connect(m_yolorecogThread, &yolorecognition::resultImgSig,
+                m_savelocalpicThread, &saveLocalpic::saveresultpicture);
 
         connect(m_yolorecogThread, &yolorecognition::pointSig,
                 this, &MainWindow::getAndsendA);
 
-        //        connect(m_yolorecogThread, &yolorecognition::frameReadySig,
-        //                m_savelocalpicThread, &saveLocalpic::savelocalpicture);
+        connect(m_yolorecogThread, &yolorecognition::rawImgSig,
+                m_savelocalpicThread, &saveLocalpic::savelocalpicture);
 
 
         m_calDistance = new calDistance;
         m_calDistance->moveToThread(threadPool_yolo);
-        connect(m_yolorecogThread, &yolorecognition::ObjPointSig,
-                m_calDistance,&calDistance::distance);
+//        connect(m_yolorecogThread, &yolorecognition::ObjPointSig,
+//                m_calDistance,&calDistance::distance);
 
         m_tracker = new ConveyorTracker;
         connect(m_calDistance,&calDistance::readyPoint,
@@ -1243,40 +1245,40 @@ void MainWindow::on_dless300_clicked()
 
 void MainWindow::on_b1_clicked()
 {
-    emit batchControl("01 00 14");
+    emit batchControl("01 01 FF");
 }
 
 void MainWindow::on_b2_clicked()
 {
-    emit batchControl("02 00 15");
+    emit batchControl("02 01 FF");
 }
 
 void MainWindow::on_b3_clicked()
 {
-    emit batchControl("03 00 15");
+    emit batchControl("03 01 FF");
 }
 
 void MainWindow::on_b4_clicked()
 {
-    emit batchControl("04 00 15");
+    emit batchControl("04 01 FF");
 }
 
 void MainWindow::on_b5_clicked()
 {
-    emit batchControl("05 00 15");
+    emit batchControl("05 01 FF");
 }
 
 void MainWindow::on_b6_clicked()
 {
-    emit batchControl("06 00 15");
+    emit batchControl("06 01 FF");
 }
 
 void MainWindow::on_b7_clicked()
 {
-    emit batchControl("07 00 15");
+    emit batchControl("07 01 FF");
 }
 
 void MainWindow::on_b8_clicked()
 {
-    emit batchControl("08 00 15");
+    emit batchControl("08 01 FF");
 }

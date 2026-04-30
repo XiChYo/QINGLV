@@ -604,6 +604,121 @@ QPoint yolorecognition::run_seg_predict(const RknnModelSession& session,
                          << "mask size:"
                          << obj.mask.cols << "x" << obj.mask.rows
                          << "empty:" << obj.mask.empty();
+
+//                qDebug() << "mask rows:" << obj.mask.rows
+//                         << "mask cols:" << obj.mask.cols
+//                         << "mask channels:" << obj.mask.channels()
+//                         << "mask type:" << obj.mask.type();
+//                cv::imshow("mask", obj.mask);
+//                qDebug() << (int)obj.mask.at<uchar>(100,100);
+//                cv::Mat showMask;
+
+                // 如果 obj.mask 是 0/1 的单通道 mask
+//                obj.mask.convertTo(showMask, CV_8U, 255);
+
+                // 显示放大后的 mask
+//                cv::imshow("mask", showMask);
+
+
+                x = obj.box.x + obj.box.width / 2;
+                y = obj.box.y + obj.box.height / 2;
+
+                qDebug()<<"X:"<<x;
+                qDebug()<<"Y:"<<y;
+
+                cv::Mat mask = obj.mask.clone();
+
+                // 如果 mask 是 0/1，转成 0/255
+                mask.convertTo(mask, CV_8U, 255);
+
+                std::vector<std::vector<cv::Point>> contours;
+                std::vector<cv::Vec4i> hierarchy;
+
+                // 提取轮廓
+                cv::findContours(
+                    mask,
+                    contours,
+                    hierarchy,
+                    cv::RETR_EXTERNAL,
+                    cv::CHAIN_APPROX_SIMPLE
+                );
+
+                if (!contours.empty())
+                {
+                    // 找最大轮廓
+                    int maxIndex = 0;
+                    double maxArea = 0;
+
+                    for (int i = 0; i < contours.size(); i++)
+                    {
+                        double area = cv::contourArea(contours[i]);
+                        if (area > maxArea)
+                        {
+                            maxArea = area;
+                            maxIndex = i;
+                        }
+                    }
+
+                    std::vector<cv::Point> bottleContour = contours[maxIndex];
+
+                    // 可视化图（建议画在原图上）
+//                    cv::Mat drawImg = result_img.clone();
+
+                    int targetY = y;
+
+                    bool found = false;
+                    int minX = INT_MAX;
+                    int maxX = INT_MIN;
+
+                    // 遍历轮廓点
+                    for (const auto& pt : bottleContour)
+                    {
+                        int globalX = pt.x + obj.box.x;
+                        int globalY = pt.y + obj.box.y;
+
+                        // 允许一点误差（非常重要）
+                        if (abs(globalY - targetY) <= 5)
+                        {
+                            found = true;
+
+                            if (globalX < minX)
+                                minX = globalX;
+
+                            if (globalX > maxX)
+                                maxX = globalX;
+                        }
+                    }
+
+                    if (found)
+                    {
+                        qDebug() << "左点:" << minX << targetY;
+                        qDebug() << "右点:" << maxX << targetY;
+
+                        // 画横线（绿色）
+                        cv::line(
+                            result_img,
+                            cv::Point(minX, targetY),
+                            cv::Point(maxX, targetY),
+                            cv::Scalar(0, 255, 0),
+                            2
+                        );
+
+                        // 顺便画两个端点（红色）
+                        cv::circle(result_img, cv::Point(minX, targetY), 5, cv::Scalar(0,0,255), -1);
+                        cv::circle(result_img, cv::Point(maxX, targetY), 5, cv::Scalar(0,0,255), -1);
+                    }
+                    else
+                    {
+                        qDebug() << "在 y =" << targetY << " 未找到轮廓点";
+                    }
+//                    cv::namedWindow("Bottle Line", cv::WINDOW_NORMAL);
+//                    cv::resizeWindow("Bottle Line", 1200, 800);
+//                    cv::imshow("Bottle Line", drawImg);
+//                    cv::waitKey(1);
+                }
+
+
+
                 int a = obj.box.width * obj.box.height;
                 area = obj.box.width * obj.box.height;
 
@@ -614,12 +729,16 @@ QPoint yolorecognition::run_seg_predict(const RknnModelSession& session,
                     return QPoint(-1,-1);
                 }
                 x = obj.box.x + obj.box.width / 2;
-                y = obj.box.y + obj.box.height / 2;                
+                y = obj.box.y + obj.box.height / 2;
+
+                qDebug()<<"X:"<<x;
+                qDebug()<<"Y:"<<y;
 
 //                QString now = QDateTime::currentDateTime().toString("--识别完成--yyyy-MM-dd HH:mm:ss.zzz || 第");
 //                qDebug() << now << timefortest << "次";
-
-                emit ObjPointSig(QPoint(x,y), obj.box.width);
+                int objlength = abs(maxX - minX);
+                emit ObjPointSig(QPoint(x,y), objlength);
+                //                emit ObjPointSig(QPoint(x,y), obj.box.width);
 
 //                if (area>=600000 && (obj.label == 8 || obj.label == 6) && (y <= 1300 && y >= 800))
 //                {
@@ -692,9 +811,15 @@ int yolorecognition::recognition(const QImage& image,const int timefortest) {
     cv::Mat result_img;
     const QPoint corPoint = run_seg_predict(session, orig_img, topk_class_count, enabled_mask, draw_overlay, result_img, timefortest);
 
-    QImage img = matToQImage(result_img);
+    QImage imgResult = matToQImage(result_img);
+    QImage imgOrin = matToQImage(orig_img);
 
-    emit resultImgSig(img);
+    QString filename = "img_" + QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+
+    emit resultImgSig(imgResult, filename);
+
+
+    emit rawImgSig(imgOrin, filename);
 
     release_session(session);
     if (corPoint.x() == -1 || corPoint.y() == -1) {
@@ -715,6 +840,10 @@ int yolorecognition::recognition(const QImage& image,const int timefortest) {
 
     return 0;
 }
+
+
+
+
 cv::Mat yolorecognition::QImage2Mat(const QImage& image)
 {
     QImage converted = image.convertToFormat(QImage::Format_RGB888);

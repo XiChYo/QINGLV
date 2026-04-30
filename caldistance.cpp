@@ -75,8 +75,8 @@ std::vector<ValveCmd> calDistance::generateCommands(int nozzleIndex, int numsOfN
     }
     std::vector<int> nozzleIndices;
 
-    int nozzleStart = nozzleIndex - numsOfNozzles;
-    int nozzleEnd   = nozzleIndex + numsOfNozzles;
+    int nozzleStart = nozzleIndex - numsOfNozzles/2;
+    int nozzleEnd   = nozzleIndex + numsOfNozzles/2;
 
     // 边界限制：最小为 1，最大为 72
     if (nozzleStart <= 0)

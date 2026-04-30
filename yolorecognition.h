@@ -7,6 +7,7 @@
 #include <QPoint>
 #include "rknn_api.h"
 #include "postprocess.h"
+#include <QDateTime>
 
 struct RknnModelSession {
     rknn_context ctx = 0;
@@ -30,7 +31,8 @@ public slots:
     int recognition(const QImage& image,const int timefortest);
 signals:
     void ObjPointSig(QPoint objPoint, int objlength);
-    void resultImgSig(const QImage& img);
+    void resultImgSig(const QImage& img, const QString& filename);
+    void rawImgSig(const QImage& img, const QString& filename);
 
     void pointSig(int x);
     void frameReadySig(const QImage& img);

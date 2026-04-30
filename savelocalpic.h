@@ -13,7 +13,9 @@ class saveLocalpic: public QThread
 public:
     saveLocalpic(QObject* parent = nullptr);
 
-    void savelocalpicture(const QImage& img, const QString& fileName,const int timefortest);
+    void savelocalpicture(const QImage& img, const QString& fileName);
+
+    void saveresultpicture(const QImage& img, const QString& fileName);
 
     int testint = 0;
     int times = 0;
