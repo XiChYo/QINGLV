@@ -11,6 +11,9 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QFont>
+#include <QFontMetrics>
+#include <QGuiApplication>
 #include <QObject>
 #include <QSettings>
 #include <QString>
@@ -74,13 +77,29 @@ double loadKFromSimIni(const QString& iniPath)
 
 int main(int argc, char** argv)
 {
-    QCoreApplication app(argc, argv);
+    // 修 F10:AnnotatedFrameSink 在 worker 线程用 QFontMetrics/QPainter,需要
+    //   QGuiApplication 提供 QPlatformIntegration 才能初始化字体库;否则首次
+    //   QFontDatabase::load 在 worker 线程上会段错。无显示器场景用 offscreen
+    //   平台插件(headless,不依赖 X)。
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
+    QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName("offline_sim");
     QCoreApplication::setApplicationVersion("1.0");
 
     pipeline::initClock();
     (void)Logger::instance();   // 触发 lazy 单例构造,后续 LOG_* 宏立刻可用
     registerMetaTypes();
+
+    // 主线程预热 QFontDatabase:第一次访问字体引擎不在 worker 线程内发生,后续
+    //   AnnotatedFrameSink::renderOne 在 worker 线程拿 QFontMetrics 才安全。
+    {
+        QFont f;
+        f.setPixelSize(20);
+        QFontMetrics fm(f);
+        (void)fm.horizontalAdvance(QStringLiteral("warmup 预热"));
+    }
 
     // ------------------------------------------------------------------------
     // CLI
