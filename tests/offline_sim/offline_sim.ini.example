@@ -1,0 +1,20 @@
+; tests/offline_sim/offline_sim.ini.example
+;
+; 离线仿真专用 ini,与 config.ini 解耦(《测试需求.md》§3.5 / §7.3 / §7.5)。
+; 部署时:
+;   cp offline_sim.ini.example offline_sim.ini
+; 然后把 calibrate_rpm_to_speed 产出的 K_mm_min_per_ms_r 数值写到 [encoder] 段。
+;
+; 实际仓库不入库 offline_sim.ini(.gitignore 中过滤),只入库本 example。
+; 命令行也支持 --k <float> 直接覆盖本文件的 K。
+
+[encoder]
+; K = mm/ms·per_rpm。calibrate_rpm_to_speed 产出 calib_result.txt 中
+; 的 K_mm_min_per_ms_r 字段;若该值 ≤ 0 表示尚未标定,offline_sim 在
+; useRpm=true(默认) 模式下会拒绝启动并提示先跑标定工具。
+k_mm_per_ms_per_rpm = 0.0
+
+; 配套记录,便于回溯:R² ≥ 0.95 才算可信
+fit_r_squared = 0.0
+rpm_mean      = 0.0
+calib_run_ts  =

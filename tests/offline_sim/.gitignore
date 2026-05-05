@@ -2,9 +2,14 @@
 test_log_parser
 sanity_check
 calibrate_rpm_to_speed
+offline_sim
 target_wrapper.sh
 *.app/
 
 # 标定运行结果(测试机上跑 calibrate 后产生,数据特定不入库)
 calib_run_*/
+
+# offline_sim 运行期填的 K(由 calibrate 产出后人工写入,内容因机器而异)
+# 模板见 offline_sim.ini.example,实际部署时 cp 到 offline_sim.ini 改值
+offline_sim.ini
 
