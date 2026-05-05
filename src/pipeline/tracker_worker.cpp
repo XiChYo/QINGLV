@@ -10,8 +10,15 @@
 
 namespace {
 
+// 关联候选打分:
+//   score = max(iou, coverage),既兼顾"两帧大致一致 (IoU 高)",也兼顾
+//   "一帧残缺一帧完整,A 几乎是 B 的子集 (coverage 高)"。详见 §3.6 R1。
+//   贪心阶段也按 score 降序排,保证"高度相似 (高 IoU 或高 coverage) 的对"
+//   优先抢占 trackId,避免被 IoU 中等但 coverage 弱的对抢先。
 struct AssocCandidate {
-    float iou;
+    float score;     // = max(iou, coverage),用于阈值判断 + 贪心排序
+    float iou;       // 保留诊断用
+    float coverage;  // 同上
     int   detIdx;
     int   trkIdx;
 };
@@ -181,6 +188,37 @@ float TrackerWorker::maskIoU(const cv::Mat& maskA, const cv::Rect& bboxA,
     return static_cast<float>(interArea) / static_cast<float>(uni);
 }
 
+float TrackerWorker::maskCoverage(const cv::Mat& maskA, const cv::Rect& bboxA,
+                                  const cv::Mat& maskB, const cv::Rect& bboxB)
+{
+    const cv::Rect inter = bboxA & bboxB;
+    if (inter.area() == 0) return 0.0f;
+
+    const cv::Rect localA(inter.x - bboxA.x, inter.y - bboxA.y,
+                          inter.width, inter.height);
+    const cv::Rect localB(inter.x - bboxB.x, inter.y - bboxB.y,
+                          inter.width, inter.height);
+    if (localA.x < 0 || localA.y < 0 ||
+        localA.x + localA.width  > maskA.cols ||
+        localA.y + localA.height > maskA.rows) return 0.0f;
+    if (localB.x < 0 || localB.y < 0 ||
+        localB.x + localB.width  > maskB.cols ||
+        localB.y + localB.height > maskB.rows) return 0.0f;
+
+    cv::Mat subA = maskA(localA);
+    cv::Mat subB = maskB(localB);
+    cv::Mat andMat;
+    cv::bitwise_and(subA, subB, andMat);
+    const int interArea = cv::countNonZero(andMat);
+    if (interArea == 0) return 0.0f;
+
+    const int areaA = cv::countNonZero(maskA);
+    const int areaB = cv::countNonZero(maskB);
+    const int smaller = std::min(areaA, areaB);
+    if (smaller <= 0) return 0.0f;
+    return static_cast<float>(interArea) / static_cast<float>(smaller);
+}
+
 cv::Rect TrackerWorker::extrapolateBbox(const cv::Rect& bbox, qint64 fromT, qint64 toT) const
 {
     const float speed = currentSpeedMmPerMs();
@@ -278,6 +316,7 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
     }
 
     // 2. 把每个活跃 track 的 bbox 外推到 tNow,构造候选集
+    //    打分用 max(IoU, coverage),阈值复用 cfg.iouThreshold(详见 §3.6 R1)
     QVector<AssocCandidate> candidates;
     for (int di = 0; di < dets.size(); ++di) {
         for (int ti = 0; ti < m_active.size(); ++ti) {
@@ -285,15 +324,18 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
                 m_active[ti].bboxBeltRasterPx, m_active[ti].tCaptureMs, tNow);
             const float iou = maskIoU(dets[di].mask, dets[di].bbox,
                                       m_active[ti].maskBeltRaster, trkBboxAtNow);
-            if (iou >= m_cfg.iouThreshold) {
-                candidates.push_back({iou, di, ti});
+            const float cov = maskCoverage(dets[di].mask, dets[di].bbox,
+                                           m_active[ti].maskBeltRaster, trkBboxAtNow);
+            const float score = std::max(iou, cov);
+            if (score >= m_cfg.iouThreshold) {
+                candidates.push_back({score, iou, cov, di, ti});
             }
         }
     }
 
-    // 3. 贪心关联
+    // 3. 贪心关联(按 score 降序,避免 coverage 高但 IoU 低的"残→全"对被抢)
     std::sort(candidates.begin(), candidates.end(),
-              [](const AssocCandidate& a, const AssocCandidate& b) { return a.iou > b.iou; });
+              [](const AssocCandidate& a, const AssocCandidate& b) { return a.score > b.score; });
     QVector<bool> detUsed(dets.size(), false);
     QVector<bool> trkUsed(m_active.size(), false);
     for (const auto& c : candidates) {
@@ -327,12 +369,17 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         if (detUsed[di]) continue;
         const auto& det = frame.objs[dets[di].srcIdx];
 
+        // ghost 抑制命中口径同步升级为 max(IoU, coverage),
+        // 与上面候选打分对称,避免"关联放过、抑制漏掉"造成的二次派发(§3.6 R1)。
         bool suppressed = false;
         for (int gi = 0; gi < m_ghosts.size(); ++gi) {
             auto& g = m_ghosts[gi];
             const cv::Rect gNow = extrapolateBbox(g.bboxBeltRasterPx, g.tCaptureMs, tNow);
-            if (maskIoU(dets[di].mask, dets[di].bbox, g.maskBeltRaster, gNow)
-                >= m_cfg.iouThreshold) {
+            const float ghostIou = maskIoU(dets[di].mask, dets[di].bbox,
+                                           g.maskBeltRaster, gNow);
+            const float ghostCov = maskCoverage(dets[di].mask, dets[di].bbox,
+                                                g.maskBeltRaster, gNow);
+            if (std::max(ghostIou, ghostCov) >= m_cfg.iouThreshold) {
                 // 与 ghost 命中时也做 union 累积,让抑制池跟随观测持续更新。
                 cv::Mat mergedMask;
                 cv::Rect mergedBbox;

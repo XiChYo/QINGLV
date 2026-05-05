@@ -47,6 +47,15 @@ private:
     static float maskIoU(const cv::Mat& maskA, const cv::Rect& bboxA,
                          const cv::Mat& maskB, const cv::Rect& bboxB);
 
+    // 计算 mask coverage(containment ratio):|A∩B| / min(|A|,|B|)。
+    // 物理含义:"较小那一侧 mask 有多大比例落在另一侧 mask 内"。
+    // 与 maskIoU 配合用于"残缺帧 vs 完整帧"的关联场景(参见 §3.6 R1):
+    //   - A 是 B 的子集 → coverage 接近 1,IoU 可能很低;
+    //   - 用 max(IoU, coverage) 作打分,避免漏关联导致同物体被拆 track。
+    // |A∩B|=0 时返回 0;退化输入(空 mask)返回 0。
+    static float maskCoverage(const cv::Mat& maskA, const cv::Rect& bboxA,
+                              const cv::Mat& maskB, const cv::Rect& bboxB);
+
     // 把一个 tracked / ghost 的 bbox 从其 tCaptureMs 外推到目标时间,
     // 只移动 bbox.y(belt 运动方向);mask 不动。
     cv::Rect extrapolateBbox(const cv::Rect& bbox, qint64 fromT, qint64 toT) const;
