@@ -153,6 +153,41 @@ void post_process_seg_ex(const float* det_data, int det_count, int det_len,
     if (keep_indices.empty()) return;
 
     // ------------------------------------------------------------------
+    // Phase 2.5:跨类别 NMS(class-agnostic),用相同 nms_threshold。
+    //
+    // 修复 R4:M4 二轮跑发现 yolo 在同一物体上偶发输出多个 class 高 conf
+    // 检测(《测试需求.md》§7.9 实测 t=17264 同一饮料瓶被同时打出
+    // cls=1 conf=0.77 + cls=5 conf=0.67,bbox 差 1-2 px)。垃圾分拣业务
+    // 类别**互斥**(一个物体不可能既是 beveragebottle 又是 tetrapak),所以
+    // per-class NMS 之上还要做一道 class-agnostic 抑制。
+    //
+    // 算法:把所有保留下来的索引按 prob 降序统一再扫一遍,IoU > 阈值 的
+    // 低 conf 项无论 class 是否一致都抑制。等价于:对每个物理位置,只保留
+    // 全部 class 中 conf 最高的那个 SegObject。生产路径下两个不同 class
+    // 在同一物理位置真的代表两个不同物体的概率极低,即便有也是 yolo 模型
+    // 自身需要解决的问题,后处理优先按"互斥"假设走。
+    // ------------------------------------------------------------------
+    std::sort(keep_indices.begin(), keep_indices.end(), [&](int a, int b) {
+        return candidates[a].prob > candidates[b].prob;
+    });
+    std::vector<int> kept_after_xclass;
+    kept_after_xclass.reserve(keep_indices.size());
+    std::vector<uint8_t> xsuppressed(keep_indices.size(), 0);
+    for (size_t i = 0; i < keep_indices.size(); ++i) {
+        if (xsuppressed[i]) continue;
+        kept_after_xclass.push_back(keep_indices[i]);
+        for (size_t j = i + 1; j < keep_indices.size(); ++j) {
+            if (xsuppressed[j]) continue;
+            if (rectIoU(candidates[keep_indices[i]].box,
+                        candidates[keep_indices[j]].box) > params.nms_threshold) {
+                xsuppressed[j] = 1;
+            }
+        }
+    }
+    keep_indices.swap(kept_after_xclass);
+    if (keep_indices.empty()) return;
+
+    // ------------------------------------------------------------------
     // Phase 3:只对保留的候选计算 mask
     //   mask 计算涉及 (1×32) × (32×H*W) 矩阵乘 + sigmoid + resize 三次,是后处理
     //   主要开销;master 实测 dense 场景下与"候选期算 mask"相比可节省数倍耗时。
