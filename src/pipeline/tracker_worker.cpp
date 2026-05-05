@@ -23,6 +23,20 @@ struct AssocCandidate {
     int   trkIdx;
 };
 
+// 取 classAreaAcc 中累计面积最大的 classId;空 / 全 0 时返回 -1。
+static int argmaxClassArea(const QHash<int, float>& acc)
+{
+    int   best     = -1;
+    float bestArea = 0.0f;
+    for (auto it = acc.constBegin(); it != acc.constEnd(); ++it) {
+        if (it.value() > bestArea) {
+            bestArea = it.value();
+            best     = it.key();
+        }
+    }
+    return best;
+}
+
 // 在同一全局栅格坐标系下合并两个二值 mask，输出 union mask + union bbox。
 static void mergeMasksUnion(const cv::Mat& maskA, const cv::Rect& bboxA,
                             const cv::Mat& maskB, const cv::Rect& bboxB,
@@ -276,6 +290,8 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
     // 幽灵会随 extrapolate 自然推过喷阀线 + 清除距离,再由 purgeGhosts 回收。
     if (m_firstFrame) {
         m_firstFrame = false;
+        QVector<DetTrackBinding> bindings;
+        bindings.reserve(frame.objs.size());
         for (int i = 0; i < frame.objs.size(); ++i) {
             cv::Mat mask;
             cv::Rect bbox;
@@ -289,9 +305,20 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
             g.tCaptureMs       = frame.tCaptureMs;
             g.finalClassId     = frame.objs[i].classId;  // 仅为日志可读
             m_ghosts.push_back(g);
+
+            // R2:首帧 ghostify,无 trackId,bestClassId 取 det 自身
+            DetTrackBinding b;
+            b.detIndex          = i;
+            b.trackId           = -1;
+            b.bestClassId       = frame.objs[i].classId;
+            b.suppressedByGhost = false;
+            b.isNewTrack        = false;
+            b.firstFrameGhost   = true;
+            bindings.push_back(b);
         }
         LOG_INFO(QString("TrackerWorker first frame suppressed %1 objs as ghosts")
                  .arg(frame.objs.size()));
+        emit frameAnnotationReady(frame.tCaptureMs, bindings);
         return;
     }
 
@@ -314,6 +341,11 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
                         tNow, dr.mask, dr.bbox, dr.areaMm2);
         dets.push_back(dr);
     }
+
+    // R2:为本帧每个 det 预占一个 binding 位,detIndex 与 dets 顺序一致。
+    // 各分支(关联/ghost 抑制/新建)在自己处填字段,最后无条件 emit。
+    QVector<DetTrackBinding> bindings(dets.size());
+    for (int i = 0; i < dets.size(); ++i) bindings[i].detIndex = dets[i].srcIdx;
 
     // 2. 把每个活跃 track 的 bbox 外推到 tNow,构造候选集
     //    打分用 max(IoU, coverage),阈值复用 cfg.iouThreshold(详见 §3.6 R1)
@@ -362,6 +394,13 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
                                       + dets[c.detIdx].areaMm2;
         detUsed[c.detIdx] = true;
         trkUsed[c.trkIdx] = true;
+
+        // R2:关联成功后,bestClassId 取本 track 当前累计面积最大的类
+        bindings[c.detIdx].trackId           = trk.trackId;
+        bindings[c.detIdx].bestClassId       = argmaxClassArea(trk.classAreaAcc);
+        bindings[c.detIdx].suppressedByGhost = false;
+        bindings[c.detIdx].isNewTrack        = false;
+        bindings[c.detIdx].firstFrameGhost   = false;
     }
 
     // 4. 未匹配 det:查已分拣池,否则新增 track
@@ -372,6 +411,7 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         // ghost 抑制命中口径同步升级为 max(IoU, coverage),
         // 与上面候选打分对称,避免"关联放过、抑制漏掉"造成的二次派发(§3.6 R1)。
         bool suppressed = false;
+        int  hitGhostFinalClass = -1;
         for (int gi = 0; gi < m_ghosts.size(); ++gi) {
             auto& g = m_ghosts[gi];
             const cv::Rect gNow = extrapolateBbox(g.bboxBeltRasterPx, g.tCaptureMs, tNow);
@@ -390,10 +430,19 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
                 g.bboxBeltRasterPx = mergedBbox;
                 g.tCaptureMs       = tNow;
                 suppressed         = true;
+                hitGhostFinalClass = g.finalClassId;
                 break;
             }
         }
-        if (suppressed) continue;
+        if (suppressed) {
+            // R2:被 ghost 抑制,无 trackId,bestClassId 取 ghost 当年的 finalClassId
+            bindings[di].trackId           = -1;
+            bindings[di].bestClassId       = hitGhostFinalClass;
+            bindings[di].suppressedByGhost = true;
+            bindings[di].isNewTrack        = false;
+            bindings[di].firstFrameGhost   = false;
+            continue;
+        }
 
         TrackedObject trk;
         trk.trackId          = m_nextTrackId++;
@@ -405,6 +454,13 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         trk.latestAreaMm2    = dets[di].areaMm2;
         trk.classAreaAcc[det.classId] = dets[di].areaMm2;
         m_active.push_back(trk);
+
+        // R2:新建 track,首次仅一票,bestClassId = det.classId
+        bindings[di].trackId           = trk.trackId;
+        bindings[di].bestClassId       = det.classId;
+        bindings[di].suppressedByGhost = false;
+        bindings[di].isNewTrack        = true;
+        bindings[di].firstFrameGhost   = false;
     }
 
     // 5. 未匹配 track:miss++。
@@ -422,11 +478,7 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
             trk.updateCount < m_cfg.updateFramesY) continue;
 
         // 选 class:累计面积最大
-        int   bestClass = -1;
-        float bestArea  = 0.0f;
-        for (auto it = trk.classAreaAcc.constBegin(); it != trk.classAreaAcc.constEnd(); ++it) {
-            if (it.value() > bestArea) { bestArea = it.value(); bestClass = it.key(); }
-        }
+        const int bestClass = argmaxClassArea(trk.classAreaAcc);
 
         // 品类过滤
         if (bestClass < 0 ||
@@ -449,4 +501,7 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
 
     // 7. 清理已分拣池
     purgeGhosts(tNow);
+
+    // R2 (§3.7):无条件 emit,即便本帧 frame.objs 为空 / 全部命中 ghost
+    emit frameAnnotationReady(tNow, bindings);
 }

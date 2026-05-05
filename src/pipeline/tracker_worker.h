@@ -32,6 +32,12 @@ signals:
     void sortTaskReady(const SortTask& task);
     void warning(const QString& msg);
 
+    // R2 (§3.7):每一帧 onFrameInferred 处理结束后(无论是否触发分拣)无条件
+    // 发出。bindings 与 frame.objs 一一对应,顺序按 detIndex 升序。
+    // 用于离线仿真/可视化层标注"该帧每个 det 最终被合并/抑制成什么 trackId
+    // 与 bestClassId",不参与生产路径决策。
+    void frameAnnotationReady(qint64 tCaptureMs, QVector<DetTrackBinding> bindings);
+
 private:
     // 把一个 DetectedObject 栅格化到 belt 系。
     // 返回值与 TrackedObject 的 maskBeltRaster/bboxBeltRasterPx 同语义。

@@ -30,6 +30,8 @@ int main(int argc, char** argv)
     qRegisterMetaType<SpeedSample>("SpeedSample");
     qRegisterMetaType<ValvePulse>("ValvePulse");
     qRegisterMetaType<QVector<ValvePulse>>("QVector<ValvePulse>");
+    qRegisterMetaType<DetTrackBinding>("DetTrackBinding");
+    qRegisterMetaType<QVector<DetTrackBinding>>("QVector<DetTrackBinding>");
     qRegisterMetaType<RuntimeConfig>("RuntimeConfig");
 
     int status = 0;

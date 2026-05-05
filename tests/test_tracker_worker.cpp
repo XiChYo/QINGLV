@@ -80,6 +80,12 @@ private slots:
     // 应被合并到同一 trackId,而非误新建第二条 track。
     void partialDet_mergesIntoFullTrack_viaCoverage();
     void partialDet_hitsGhostPool_viaCoverage();
+
+    // R2 (§3.7):frameAnnotationReady 信号 —— 每帧无条件 emit,
+    // bindings 与 frame.objs 一一对应,字段语义如 DetTrackBinding 所述。
+    void r2_firstFrame_emitsBindingsWithFirstFrameGhostFlag();
+    void r2_normalFrame_emptyDets_stillEmitsEmptyBindings();
+    void r2_normalFrame_newAndAssociatedAndGhost_setsCorrectFields();
 };
 
 void TrackerWorkerTest::firstFrame_registersAllAsGhosts()
@@ -454,6 +460,143 @@ void TrackerWorkerTest::partialDet_hitsGhostPool_viaCoverage()
     QCOMPARE(spy.count(), 1);
     // ghost 时间戳应被刷新到本帧 (§3.6 R1: 命中时也走 union 路径)
     QCOMPARE(trk.m_ghosts[0].tCaptureMs, static_cast<qint64>(300));
+}
+
+// ============================================================================
+// R2 frameAnnotationReady 单测(§3.7)
+// ============================================================================
+
+void TrackerWorkerTest::r2_firstFrame_emitsBindingsWithFirstFrameGhostFlag()
+{
+    TrackerWorker trk;
+    trk.onSessionStart(makeCfg());
+    QSignalSpy spy(&trk, &TrackerWorker::frameAnnotationReady);
+
+    DetectedFrame f = makeFrame(100, 640, 480, {
+        makeDet(/*classId*/3, 0.9f, 10, 10, 40, 40),
+        makeDet(/*classId*/7, 0.8f, 200, 100, 30, 30),
+    });
+    trk.onFrameInferred(f);
+
+    QCOMPARE(spy.count(), 1);
+    const auto args = spy.takeFirst();
+    QCOMPARE(args.at(0).value<qint64>(), static_cast<qint64>(100));
+    const auto bindings = args.at(1).value<QVector<DetTrackBinding>>();
+    QCOMPARE(bindings.size(), 2);
+
+    for (int i = 0; i < bindings.size(); ++i) {
+        QCOMPARE(bindings[i].detIndex,          i);
+        QCOMPARE(bindings[i].trackId,           -1);
+        QCOMPARE(bindings[i].firstFrameGhost,   true);
+        QCOMPARE(bindings[i].suppressedByGhost, false);
+        QCOMPARE(bindings[i].isNewTrack,        false);
+    }
+    // bestClassId 应等于该 det 的 classId
+    QCOMPARE(bindings[0].bestClassId, 3);
+    QCOMPARE(bindings[1].bestClassId, 7);
+}
+
+void TrackerWorkerTest::r2_normalFrame_emptyDets_stillEmitsEmptyBindings()
+{
+    TrackerWorker trk;
+    trk.onSessionStart(makeCfg());
+    QSignalSpy spy(&trk, &TrackerWorker::frameAnnotationReady);
+
+    // 首帧 dets 为空 -> emit 空 bindings(走首帧分支)
+    trk.onFrameInferred(makeFrame(0, 640, 480, {}));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(1).value<QVector<DetTrackBinding>>().size(), 0);
+
+    // 后续 dets 为空 -> 主流程也 emit 空 bindings
+    trk.onFrameInferred(makeFrame(100, 640, 480, {}));
+    QCOMPARE(spy.count(), 1);
+    const auto args = spy.takeFirst();
+    QCOMPARE(args.at(0).value<qint64>(), static_cast<qint64>(100));
+    QCOMPARE(args.at(1).value<QVector<DetTrackBinding>>().size(), 0);
+}
+
+void TrackerWorkerTest::r2_normalFrame_newAndAssociatedAndGhost_setsCorrectFields()
+{
+    // 这一用例覆盖 R2 三种状态位的设置:
+    //   - isNewTrack:第一次进入 active
+    //   - 关联成功:bestClassId 取累计面积 argmax
+    //   - suppressedByGhost:命中已分拣池
+    //
+    // 时间线:
+    //   t=0      : 伪首帧(无 det)
+    //   t=100    : 大物体 A 在 (10,10,80,80)        -> 新建 track1 (isNewTrack)
+    //   t=200    : 同 A 再次出现                    -> 关联成功 + 触发分拣 (Y=2)
+    //              (此时 track1 进 ghost 池)
+    //   t=300    : A 同位置再次出现 +
+    //              新物体 B 在 (300,300,40,40)       -> A: suppressedByGhost
+    //                                                  -> B: isNewTrack(track2)
+    RuntimeConfig cfg = makeCfg();
+    cfg.realLengthMm          = 640.0f;
+    cfg.realWidthMm           = 480.0f;
+    cfg.maskRasterMmPerPx     = 2.0f;
+    cfg.iouThreshold          = 0.3f;
+    cfg.updateFramesY         = 2;
+    cfg.nominalSpeedMs        = 0.0f;
+    cfg.dispatchedPoolClearMm = 10000.0f;
+    cfg.enabledClassIds.insert(1);
+
+    TrackerWorker trk;
+    trk.onSessionStart(cfg);
+    QSignalSpy spy(&trk, &TrackerWorker::frameAnnotationReady);
+
+    trk.onFrameInferred(makeFrame(0, 640, 480, {}));   // 伪首帧 -> emit#1
+    trk.onFrameInferred(makeFrame(100, 640, 480,
+        {makeDet(1, 0.9f, 10, 10, 80, 80)}));          // A 新建 -> emit#2
+    trk.onFrameInferred(makeFrame(200, 640, 480,
+        {makeDet(1, 0.9f, 10, 10, 80, 80)}));          // A 关联触发 -> emit#3
+    trk.onFrameInferred(makeFrame(300, 640, 480, {
+        makeDet(1, 0.9f, 10, 10, 80, 80),               // A 命中 ghost
+        makeDet(1, 0.9f, 300, 300, 40, 40),             // B 新建
+    }));                                                // -> emit#4
+
+    QCOMPARE(spy.count(), 4);
+
+    // 取第 2 次:A 新建
+    const auto frameNew = spy.at(1).at(1).value<QVector<DetTrackBinding>>();
+    QCOMPARE(frameNew.size(), 1);
+    QCOMPARE(frameNew[0].detIndex,          0);
+    QVERIFY  (frameNew[0].trackId           > 0);
+    QCOMPARE(frameNew[0].bestClassId,       1);
+    QCOMPARE(frameNew[0].isNewTrack,        true);
+    QCOMPARE(frameNew[0].suppressedByGhost, false);
+    QCOMPARE(frameNew[0].firstFrameGhost,   false);
+    const int trackId_A = frameNew[0].trackId;
+
+    // 取第 3 次:A 关联(触发但 binding 在触发判定前就写好了,trackId 仍是 A)
+    const auto frameAssoc = spy.at(2).at(1).value<QVector<DetTrackBinding>>();
+    QCOMPARE(frameAssoc.size(), 1);
+    QCOMPARE(frameAssoc[0].detIndex,          0);
+    QCOMPARE(frameAssoc[0].trackId,           trackId_A);
+    QCOMPARE(frameAssoc[0].bestClassId,       1);
+    QCOMPARE(frameAssoc[0].isNewTrack,        false);
+    QCOMPARE(frameAssoc[0].suppressedByGhost, false);
+    QCOMPARE(frameAssoc[0].firstFrameGhost,   false);
+
+    // 取第 4 次:A 被 ghost 抑制 + B 新建
+    const auto frameMix = spy.at(3).at(1).value<QVector<DetTrackBinding>>();
+    QCOMPARE(frameMix.size(), 2);
+
+    // det0 = A,suppressedByGhost
+    QCOMPARE(frameMix[0].detIndex,          0);
+    QCOMPARE(frameMix[0].trackId,           -1);
+    QCOMPARE(frameMix[0].bestClassId,       1);   // ghost.finalClassId
+    QCOMPARE(frameMix[0].isNewTrack,        false);
+    QCOMPARE(frameMix[0].suppressedByGhost, true);
+    QCOMPARE(frameMix[0].firstFrameGhost,   false);
+
+    // det1 = B,新建 track,trackId 不同于 A
+    QCOMPARE(frameMix[1].detIndex,          1);
+    QVERIFY  (frameMix[1].trackId           > 0);
+    QVERIFY  (frameMix[1].trackId           != trackId_A);
+    QCOMPARE(frameMix[1].bestClassId,       1);
+    QCOMPARE(frameMix[1].isNewTrack,        true);
+    QCOMPARE(frameMix[1].suppressedByGhost, false);
+    QCOMPARE(frameMix[1].firstFrameGhost,   false);
 }
 
 QObject* makeTrackerWorkerTest() { return new TrackerWorkerTest; }
