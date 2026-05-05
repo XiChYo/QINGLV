@@ -90,6 +90,7 @@ private slots:
     void cam_initialize_missingFileCounted();
     void cam_noThrottle_emitsAllMatchedFrames();
     void cam_filePathOf_returnsSourcePath();
+    void cam_tCaptureEqualsRawPhysicalTime();   // F12 回归
     void cam_throttleAndBackpressure_skipsAndWarns();
 
     // EncoderDriver
@@ -256,6 +257,48 @@ void OfflineDriversTest::cam_filePathOf_returnsSourcePath()
     QVERIFY2(p.endsWith(fileName),
              qPrintable(QStringLiteral("filePathOf=%1 fileName=%2").arg(p, fileName)));
     QVERIFY2(QFile::exists(p), qPrintable(p));
+}
+
+// F12 回归:tCapture 必须 = raw 文件物理时间(log Capture e.tMs - t0_log = deltaMs),
+// 不能用墙钟。仿真模式下 fastForward=0 让 5 帧在同一墙钟 ms 内瞬时派发,墙钟版本
+// 会全部踩同一 ms(靠单调递增兜底变成 0,1,2,3,4),物理版本则严格保留 raw 真实间隔
+// 0,100,200,300,400。tracker 用 tCapture 差外推 dy = speed * Δt,只有物理时间口径
+// 才与 raw 文件画面里的物体真实位移一致,墙钟口径会让外推位移系统性偏离。
+void OfflineDriversTest::cam_tCaptureEqualsRawPhysicalTime()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    for (int s : {10, 12, 14, 16, 18}) QVERIFY(writeMockJpg(tmp.path(), s));
+
+    OfflineCameraDriver drv;
+    CameraDriverOptions opt;
+    opt.rawDir      = tmp.path();
+    opt.noThrottle  = true;     // 关掉节流和反压,5 帧全部 emit
+    opt.fastForward = 0.0;      // 全部立刻派发 -> 同一墙钟 ms 命中
+    QVERIFY(drv.initialize(opt, makeMockEvents(), nullptr));
+
+    QSignalSpy spy(&drv, &OfflineCameraDriver::frameReadySig);
+    QSignalSpy spyEnd(&drv, &OfflineCameraDriver::sessionEnded);
+    drv.start();
+    QVERIFY(spyEnd.wait(5000));
+    QCOMPARE(spy.count(), 5);
+
+    // mock LogEvents Capture seq=10/12/14/16/18 分别在 t=1100/1200/1300/1400/1500,
+    // t0_log=1100(首条 Velocity 时刻),所以 deltaMs 期望 0/100/200/300/400。
+    QVector<qint64> expected = {0, 100, 200, 300, 400};
+    for (int i = 0; i < spy.count(); ++i) {
+        const qint64 tCap = spy.at(i).at(1).value<qint64>();
+        QVERIFY2(tCap == expected[i],
+                 qPrintable(QStringLiteral(
+                     "frame %1: tCapture=%2 expected raw deltaMs=%3 (F12)")
+                     .arg(i).arg(tCap).arg(expected[i])));
+    }
+    // 同一墙钟 ms 派发不会让 tCapture 撞:严格单调递增。
+    for (int i = 1; i < spy.count(); ++i) {
+        const qint64 a = spy.at(i-1).at(1).value<qint64>();
+        const qint64 b = spy.at(i).at(1).value<qint64>();
+        QVERIFY(b > a);
+    }
 }
 
 void OfflineDriversTest::cam_throttleAndBackpressure_skipsAndWarns()

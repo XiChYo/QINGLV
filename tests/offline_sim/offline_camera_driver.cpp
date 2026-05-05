@@ -288,10 +288,19 @@ void OfflineCameraDriver::onRawFrameArrived(int eventIdx)
         return;
     }
 
-    // 严格递增的 tCaptureMs:即便 noThrottle=true / fastForward=0 让多帧
-    // 在同一 ms 命中,emit 出去的字段也不会撞,m_pathMap 不会自我覆盖,
-    // 下游(AnnotatedFrameSink M3)按 tCaptureMs 反查就一定能取回源图。
-    qint64 tCapture = now;
+    // 修复 F12:tCaptureMs 必须用 raw 文件本身的"物理拍摄时间"(对齐 log Capture
+    // e.tMs - t0_log,与 raw 文件名 timestamp 一致),**不能**用墙钟 now。
+    //
+    // 根因:仿真侧 yolo 推理耗时 + 反压跳帧不均,会让"两次 emit 之间的墙钟差"
+    // 与"两个 raw 文件物理拍摄时间差"严重不等(实测 case 3/4 墙钟 1000ms ↔ raw
+    // 物理 504ms,case 6 墙钟 1000ms ↔ raw 物理 1185ms)。tracker 用 tCapture 差
+    // 乘以 K*RPM 外推前帧 bbox 到当前时刻,墙钟口径会让外推位移系统性偏离 raw
+    // 真实物理位移,关联打分 IoU/coverage 越过阈值。
+    //
+    // 改用 deltaMs 后,tCapture 语义重新对齐生产 CameraWorker:相机硬件 timestamp
+    // 永远代表"快门按下的物理瞬间",与"该帧到达下游 worker 时的墙钟"无关。
+    // m_lastEmittedTCapture 单调递增保护继续保留,防止 fastForward=0 时同 ms 撞。
+    qint64 tCapture = f.deltaMs;
     if (tCapture <= m_lastEmittedTCapture) {
         tCapture = m_lastEmittedTCapture + 1;
     }
