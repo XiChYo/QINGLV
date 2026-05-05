@@ -6,6 +6,7 @@
 
 #include "pipeline/pipeline_clock.h"
 #include "pipeline/pipeline_types.h"
+#include "config/runtime_config.h"
 
 // 前向声明各测试类。为避免互相包含,各 test_*.cpp 里声明 getter 函数。
 QObject* makePipelineClockTest();
