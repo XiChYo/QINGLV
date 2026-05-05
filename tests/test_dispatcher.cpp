@@ -1,13 +1,19 @@
+// 见 test_tracker_worker.cpp 顶部说明:'#define private public' 必须放在
+// system / 三方头之后,否则 OpenCV → <sstream> 的 __xfer_bufptrs 会因 access
+// 替换而触发 redeclared 错误。
+#include <QtTest/QtTest>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QFile>
+#include <opencv2/core.hpp>
+
+#include "pipeline/pipeline_types.h"
+
 #define private public
 #define protected public
 #include "pipeline/dispatcher.h"
 #undef private
 #undef protected
-
-#include <QtTest/QtTest>
-#include <QSignalSpy>
-#include <QTemporaryDir>
-#include <QFile>
 
 namespace {
 

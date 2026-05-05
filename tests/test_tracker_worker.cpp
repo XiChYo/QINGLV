@@ -1,17 +1,25 @@
 // 测试 TrackerWorker 关键路径:首帧丢弃、IoU 关联、触发、已分拣池抑制。
 // 为了直接调 private 方法/访问 private 成员,这里局部宏改访问控制。
 // 仅此 TU 生效,不影响生产代码。
+//
+// 注意:'#define private public' 会把 *后续* 所有 include 链里的 'private:' /
+// 'protected:' 都替换成 'public:',包括 std/Qt/OpenCV 的内部头。g++ 9 + libstdc++
+// 在 <sstream> 里的 __xfer_bufptrs 模板会因此触发 "redeclared with different
+// access" 错误。修法:在打开宏之前,先 include 链上会被间接引入的 system / 三方
+// 头,让 include guard 占位,后续 hack 只作用在我们自己的 tracker_worker.h 上。
+#include <QtTest/QtTest>
+#include <QSignalSpy>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+
+#include "pipeline/pipeline_clock.h"
+#include "pipeline/pipeline_types.h"
+
 #define private public
 #define protected public
 #include "pipeline/tracker_worker.h"
 #undef private
 #undef protected
-
-#include <QtTest/QtTest>
-#include <QSignalSpy>
-#include <opencv2/imgproc.hpp>
-
-#include "pipeline/pipeline_clock.h"
 
 namespace {
 
