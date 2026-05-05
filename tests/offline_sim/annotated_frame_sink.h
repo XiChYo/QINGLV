@@ -65,6 +65,9 @@ public:
     int renderedCount() const { return m_seqInWindow; }
     int pendingCount()  const { return m_pending.size(); }
 
+    // public:供同 TU 匿名 namespace 的 overlayMasks() 复用同套调色板。
+    static cv::Scalar colorForTrackBgr(int trackId);
+
 public slots:
     void onDetectedFrame(const DetectedFrame& frame);
     void onFrameAnnotation(qint64 tCaptureMs, const QVector<DetTrackBinding>& bindings);
@@ -82,7 +85,6 @@ private:
     void renderOne(int seqInWindow, qint64 tCaptureMs, const Pending& p);
     void writeAssocRows(int seqInWindow, qint64 tCaptureMs, const Pending& p);
     QString classNameOf(int classId) const;
-    static cv::Scalar colorForTrackBgr(int trackId);
 
     OfflineCameraDriver*     m_cam = nullptr;
     QHash<int, QString>      m_id2nameCn;

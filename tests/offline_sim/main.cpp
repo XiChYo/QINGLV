@@ -79,7 +79,7 @@ int main(int argc, char** argv)
     QCoreApplication::setApplicationVersion("1.0");
 
     pipeline::initClock();
-    Logger::initialize();
+    (void)Logger::instance();   // 触发 lazy 单例构造,后续 LOG_* 宏立刻可用
     registerMetaTypes();
 
     // ------------------------------------------------------------------------
