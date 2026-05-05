@@ -142,18 +142,26 @@ QVector<offline_sim::LogEvent> selectCaptures(
     return out;
 }
 
+// 在 [tFromMs, tToMs] 范围内取 Velocity 事件 rpm 的算术平均;
+// 若该范围内 0 个 Velocity(窗口太短夹在两次速度采样之间),按 padMs 向两侧扩展
+// 一次,padMs 默认 1000(覆盖 ~2 个采样周期)。仍 0 则返回 0。
 double meanRpm(const QVector<offline_sim::LogEvent>& events,
-               qint64 tFromMs, qint64 tToMs)
+               qint64 tFromMs, qint64 tToMs, qint64 padMs = 1000)
 {
-    double sum = 0.0;
-    int    n   = 0;
-    for (const auto& ev : events) {
-        if (ev.type != offline_sim::LogEventType::Velocity) continue;
-        if (ev.tMs < tFromMs || ev.tMs > tToMs) continue;
-        sum += ev.rpm;
-        ++n;
-    }
-    return (n > 0) ? (sum / n) : 0.0;
+    auto sumIn = [&](qint64 lo, qint64 hi) -> std::pair<double,int> {
+        double s = 0.0; int n = 0;
+        for (const auto& ev : events) {
+            if (ev.type != offline_sim::LogEventType::Velocity) continue;
+            if (ev.tMs < lo || ev.tMs > hi) continue;
+            s += ev.rpm; ++n;
+        }
+        return {s, n};
+    };
+    auto [s1, n1] = sumIn(tFromMs, tToMs);
+    if (n1 > 0) return s1 / n1;
+    // 扩 ±padMs 再试一次
+    auto [s2, n2] = sumIn(tFromMs - padMs, tToMs + padMs);
+    return (n2 > 0) ? (s2 / n2) : 0.0;
 }
 
 LinReg fitLine(const QVector<double>& x, const QVector<double>& y)
