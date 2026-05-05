@@ -41,6 +41,22 @@ const QRegularExpression& reVelocity()
     return r;
 }
 
+const QRegularExpression& reYoloInferStart()
+{
+    // body: "--开始识别--YYYY-MM-DD HH:MM:SS.mmm || 第N次"
+    static const QRegularExpression r(QStringLiteral(
+        R"(--开始识别--(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\.(\d{1,3}) \|\| 第(\d+)次)"));
+    return r;
+}
+
+const QRegularExpression& reYoloInferEnd()
+{
+    // body: "--识别完成--YYYY-MM-DD HH:MM:SS.mmm || 第N次"
+    static const QRegularExpression r(QStringLiteral(
+        R"(--识别完成--(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\.(\d{1,3}) \|\| 第(\d+)次)"));
+    return r;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -102,7 +118,29 @@ LogEvent LogParser::parseLine(const QString& line)
         }
     }
 
-    // 3. SessionStart / SessionEnd
+    // 3. YOLO 推理开始 (YoloInferStart)
+    {
+        auto m = reYoloInferStart().match(line);
+        if (m.hasMatch()) {
+            ev.type = LogEventType::YoloInferStart;
+            ev.tMs  = toEpochMs(m.captured(1), m.captured(2), m.captured(3).toInt());
+            ev.seq  = m.captured(4).toInt();
+            return ev;
+        }
+    }
+
+    // 4. YOLO 推理完成 (YoloInferEnd)
+    {
+        auto m = reYoloInferEnd().match(line);
+        if (m.hasMatch()) {
+            ev.type = LogEventType::YoloInferEnd;
+            ev.tMs  = toEpochMs(m.captured(1), m.captured(2), m.captured(3).toInt());
+            ev.seq  = m.captured(4).toInt();
+            return ev;
+        }
+    }
+
+    // 5. SessionStart / SessionEnd
     if (line.contains(QStringLiteral("Start taking pictures"))) {
         ev.type = LogEventType::SessionStart;
         if (!headDate.isEmpty()) {
@@ -118,7 +156,7 @@ LogEvent LogParser::parseLine(const QString& line)
         return ev;
     }
 
-    // 4. Other:也带行首戳便于排序/调试
+    // 6. Other:也带行首戳便于排序/调试
     ev.type = LogEventType::Other;
     if (!headDate.isEmpty()) {
         ev.tMs = toEpochMs(headDate, headTime, 0);

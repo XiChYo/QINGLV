@@ -2,16 +2,19 @@
 #define OFFLINE_SIM_LOG_PARSER_H
 
 // ============================================================================
-// log_parser:saveRawPic/log.txt 解析器(雏形,M0.5)。
+// log_parser:saveRawPic/log.txt 解析器(M0.5 + M1)。
 //
-// 当前职责(满足 M0.7 角速度->线速度 K 标定的最小子集):
-//   * Capture     [camerathread] --取图--<HH:MM:SS.mmm> || 第N次
-//   * Velocity    [MainWindow]   --速度--<HH:MM:SS.mmm>线速度：Xm/min   转速：Yr/min
+// 当前职责(完整 4 类业务事件 + Other 兜底):
+//   * Capture         [camerathread]    --取图--<HH:MM:SS.mmm> || 第N次
+//   * Velocity        [MainWindow]      --速度--<HH:MM:SS.mmm>线速度：Xm/min   转速：Yr/min
+//   * YoloInferStart  [yolorecognition] --开始识别--<HH:MM:SS.mmm> || 第N次
+//   * YoloInferEnd    [yolorecognition] --识别完成--<HH:MM:SS.mmm> || 第N次
 //   * SessionStart  "Start taking pictures"
 //   * SessionEnd    "Turn off camera"
 //   * Other         其余行(也保留,raw 字段非空,便于诊断)
 //
-// 后续(M1)再补 [yolorecognition] --开始识别--/--识别完成-- 两类。
+// YoloInfer{Start,End} 仅用于"参考校验"(对比仿真 YoloWorker 的 onFrame ms vs.
+// 真机推理耗时 = end.tMs - start.tMs),**不**喂入回放;§2.2 / §3.4。
 //
 // 时间戳口径:
 //   - 行首"YYYY-MM-DD HH:MM:SS"是 logger 自身写入秒级戳;
@@ -31,6 +34,8 @@ namespace offline_sim {
 enum class LogEventType {
     Capture,
     Velocity,
+    YoloInferStart,
+    YoloInferEnd,
     SessionStart,
     SessionEnd,
     Other,
@@ -39,7 +44,7 @@ enum class LogEventType {
 struct LogEvent {
     LogEventType type    = LogEventType::Other;
     qint64       tMs     = 0;     // 解析后的绝对时间戳(ms since epoch),见 toEpochMs
-    int          seq     = -1;    // Capture: 第N次;其它类型 = -1
+    int          seq     = -1;    // Capture / YoloInferStart / YoloInferEnd: 第N次;其它类型 = -1
     int          mPerMin = 0;     // Velocity: 线速度,业务方告知不准,仅记录不使用
     int          rpm     = 0;     // Velocity: 转速,标定 K 用
     QString      raw;             // 原始整行(去掉行尾换行),便于诊断
