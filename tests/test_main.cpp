@@ -13,6 +13,7 @@ QObject* makeRuntimeConfigTest();
 QObject* makePostprocessExTest();
 QObject* makeTrackerWorkerTest();
 QObject* makeDispatcherTest();
+QObject* makeOfflineDriversTest();
 
 int main(int argc, char** argv)
 {
@@ -44,5 +45,6 @@ int main(int argc, char** argv)
     runOne(makePostprocessExTest());
     runOne(makeTrackerWorkerTest());
     runOne(makeDispatcherTest());
+    runOne(makeOfflineDriversTest());
     return status;
 }
