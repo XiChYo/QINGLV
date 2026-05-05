@@ -9,7 +9,6 @@ target_wrapper.sh
 # 标定运行结果(测试机上跑 calibrate 后产生,数据特定不入库)
 calib_run_*/
 
-# offline_sim 运行期填的 K(由 calibrate 产出后人工写入,内容因机器而异)
-# 模板见 offline_sim.ini.example,实际部署时 cp 到 offline_sim.ini 改值
-offline_sim.ini
+# 注:offline_sim.ini 现在是入库的(K 是皮带机械常数,跨机器跨时间复用),
+# 见 §7.3。如果某台特殊机器需要本地覆盖,通过 main.cpp 的 --k 命令行参数即可。
 

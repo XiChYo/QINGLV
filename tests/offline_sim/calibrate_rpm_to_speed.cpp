@@ -509,11 +509,12 @@ int main(int argc, char* argv[])
     const qint64 tToMs    = points.last().tMs;
     const double rpmMean  = meanRpm(events, tFromMs, tToMs);
     {
-        // 诊断:把 padded 窗口内的 Velocity 全部打印一遍,人工核对 rpm_mean。
-        QTextStream dbg(stdout);
+        // 诊断:把 padded 窗口内的 Velocity 全部打印到 stderr,便于人工核对 rpm_mean
+        // 是否取自合理时段。stdout 保持给最终结果块,二者分流。
+        QTextStream dbg(stderr);
         dbg.setCodec("UTF-8");
         dbg << "[calibrate] velocity in [" << (tFromMs - 1000) << ", "
-            << (tToMs + 1000) << "]:\n";
+            << (tToMs + 1000) << "] (padded ±1000 ms):\n";
         for (const auto& ev : events) {
             if (ev.type != offline_sim::LogEventType::Velocity) continue;
             if (ev.tMs < tFromMs - 1000 || ev.tMs > tToMs + 1000) continue;
