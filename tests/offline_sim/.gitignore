@@ -1,5 +1,10 @@
 # qmake build 产物(独立工程,与项目根 .gitignore 互补)
 test_log_parser
 sanity_check
+calibrate_rpm_to_speed
 target_wrapper.sh
 *.app/
+
+# 标定运行结果(测试机上跑 calibrate 后产生,数据特定不入库)
+calib_run_*/
+
