@@ -303,15 +303,31 @@ int main(int argc, char* argv[])
     QCommandLineOption optProbe  ("probe-only",
         "诊断模式:跳过 >1 物体 abort、跳过拟合,只逐帧打印 det 数 + 每个 det 的 cls/conf/bbox。"
         "用于排查 0 det / 多目标分布问题,不产出 calib_result.txt。");
+    QCommandLineOption optBboxXMin("bbox-x-min", "ROI 过滤:bbox.x >= 该值",        "PX", "0");
+    QCommandLineOption optBboxXMax("bbox-x-max", "ROI 过滤:bbox.x+w <= 该值",      "PX", "999999");
+    QCommandLineOption optBboxYMin("bbox-y-min", "ROI 过滤:bbox.y >= 该值",        "PX", "0");
+    QCommandLineOption optBboxYMax("bbox-y-max", "ROI 过滤:bbox.y+h <= 该值",      "PX", "999999");
+    QCommandLineOption optTrackBest("track-best",
+        "宽松单物体模式:每帧在 ROI 内取 conf 最高的 det 作为目标,不再 >1 abort。"
+        "适合多物体流但有稳定单物体落在 ROI 的场景,使用时务必先用 --probe-only 确认 ROI 内"
+        "实际只有 1 个目标在追踪。");
     p.addOption(optDataDir); p.addOption(optModel);
     p.addOption(optSeqFrom); p.addOption(optSeqTo);
     p.addOption(optConfig);  p.addOption(optOutput);
     p.addOption(optConf);    p.addOption(optNms);
     p.addOption(optRealL);   p.addOption(optRealW);
     p.addOption(optProbe);
+    p.addOption(optBboxXMin); p.addOption(optBboxXMax);
+    p.addOption(optBboxYMin); p.addOption(optBboxYMax);
+    p.addOption(optTrackBest);
     p.process(app);
 
     const bool probeOnly = p.isSet(optProbe);
+    const bool trackBest = p.isSet(optTrackBest);
+    const int  bboxXMin  = p.value(optBboxXMin).toInt();
+    const int  bboxXMax  = p.value(optBboxXMax).toInt();
+    const int  bboxYMin  = p.value(optBboxYMin).toInt();
+    const int  bboxYMax  = p.value(optBboxYMax).toInt();
 
     auto fail = [](const QString& msg) -> int {
         QTextStream(stderr) << "[calibrate] FAIL: " << msg << "\n";
@@ -396,11 +412,27 @@ int main(int argc, char* argv[])
 
         if (imgW == 0) { imgW = lastFrame.imgWidthPx; imgH = lastFrame.imgHeightPx; }
 
+        // ROI 过滤:把不在 [bboxXMin, bboxXMax] × [bboxYMin, bboxYMax] 内的 det 剔除
+        QVector<DetectedObject> filtered;
+        filtered.reserve(lastFrame.objs.size());
+        for (const auto& d : lastFrame.objs) {
+            const int x1 = d.bboxPx.x;
+            const int y1 = d.bboxPx.y;
+            const int x2 = x1 + d.bboxPx.width;
+            const int y2 = y1 + d.bboxPx.height;
+            if (x1 < bboxXMin || x2 > bboxXMax) continue;
+            if (y1 < bboxYMin || y2 > bboxYMax) continue;
+            filtered.push_back(d);
+        }
+        // filtered 已按 conf 排序(yolo 内部 NMS 后保留顺序);取 [0] 即 conf 最高
+        QVector<DetectedObject>& objs = filtered;
+
         if (probeOnly) {
             out << "  seq=" << cap.seq << "  t=" << cap.tMs
-                << "  detCount=" << lastFrame.objs.size() << "\n";
-            for (int oi = 0; oi < lastFrame.objs.size(); ++oi) {
-                const auto& d = lastFrame.objs[oi];
+                << "  detCount(raw)=" << lastFrame.objs.size()
+                << "  detCount(roi)=" << objs.size() << "\n";
+            for (int oi = 0; oi < objs.size(); ++oi) {
+                const auto& d = objs[oi];
                 out << "    [" << oi << "] cls=" << d.classId
                     << " conf=" << QString::number(d.confidence, 'f', 4)
                     << " bbox=(" << d.bboxPx.x << "," << d.bboxPx.y
@@ -411,16 +443,16 @@ int main(int argc, char* argv[])
             continue;  // probe 模式下不入 points / 不拟合
         }
 
-        if (lastFrame.objs.size() > 1) {
-            return fail(QString("seq=%1 检出 %2 个目标(>1)。请换一段更纯粹的窗口")
-                        .arg(cap.seq).arg(lastFrame.objs.size()));
-        }
-        if (lastFrame.objs.isEmpty()) {
-            out << "  seq=" << cap.seq << "  -> 0 det,跳过\n";
+        if (objs.isEmpty()) {
+            out << "  seq=" << cap.seq << "  -> 0 det(ROI 过滤后),跳过\n";
             continue;
         }
-
-        const auto& d = lastFrame.objs[0];
+        if (objs.size() > 1 && !trackBest) {
+            return fail(QString("seq=%1 ROI 内检出 %2 个目标(>1)。"
+                                "用 --track-best 取 conf 最高,或收紧 ROI")
+                        .arg(cap.seq).arg(objs.size()));
+        }
+        const auto& d = objs[0];  // 默认或 trackBest 都取 [0](conf 最高)
         CalibPoint cp;
         cp.seq      = cap.seq;
         cp.tMs      = cap.tMs;
