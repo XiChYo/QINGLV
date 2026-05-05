@@ -12,7 +12,9 @@ DEFINES += QT_MESSAGELOGCONTEXT
 
 # 本项目内部 include 都以 src/ 为根:'pipeline/xxx.h' / 'config/runtime_config.h' / ...
 INCLUDEPATH += $$PWD/../../src
-INCLUDEPATH += /usr/include            # rknn_api.h(随 RKNPU 驱动包安装)
+# 注意:不要再 'INCLUDEPATH += /usr/include' —— 那会把系统头当成普通 -I,
+# 反而打断 libstdc++ 'cstdlib → #include_next <stdlib.h>' 搜索链。
+# rknn_api.h 在 /usr/include 下,g++ 默认搜索路径已含,无需显式加。
 
 # 复用生产代码:YoloWorker + YoloSession + 后处理 + 配置 + 日志
 HEADERS += \

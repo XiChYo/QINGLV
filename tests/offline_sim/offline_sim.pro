@@ -15,7 +15,10 @@ DEFINES += QT_MESSAGELOGCONTEXT
 # ----------------------------------------------------------------------------
 INCLUDEPATH += $$PWD/../../src
 INCLUDEPATH += $$PWD
-INCLUDEPATH += /usr/include          # rknn_api.h(随 RKNPU 驱动包安装)
+# 注意:不要再 'INCLUDEPATH += /usr/include',那会把系统头变成普通 -I,
+# 反而打断 libstdc++ 'cstdlib → #include_next <stdlib.h>' 的搜索链
+# (g++ 9 + Qt 5.12.8 实测 fatal: stdlib.h: No such file or directory)。
+# rknn_api.h 在 /usr/include 下,g++ 默认就会查到,无需显式加。
 
 # ----------------------------------------------------------------------------
 # 复用生产代码:YoloWorker / YoloSession / postprocess_ex / TrackerWorker /
