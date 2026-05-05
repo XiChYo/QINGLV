@@ -300,12 +300,18 @@ int main(int argc, char* argv[])
     QCommandLineOption optNms    ("nms",        "覆盖 nmsThreshold",  "F");
     QCommandLineOption optRealL  ("real-length-mm", "图像 x 方向物理长度(默认 1520)", "MM", "1520");
     QCommandLineOption optRealW  ("real-width-mm",  "图像 y 方向物理宽度(默认 1270)", "MM", "1270");
+    QCommandLineOption optProbe  ("probe-only",
+        "诊断模式:跳过 >1 物体 abort、跳过拟合,只逐帧打印 det 数 + 每个 det 的 cls/conf/bbox。"
+        "用于排查 0 det / 多目标分布问题,不产出 calib_result.txt。");
     p.addOption(optDataDir); p.addOption(optModel);
     p.addOption(optSeqFrom); p.addOption(optSeqTo);
     p.addOption(optConfig);  p.addOption(optOutput);
     p.addOption(optConf);    p.addOption(optNms);
     p.addOption(optRealL);   p.addOption(optRealW);
+    p.addOption(optProbe);
     p.process(app);
+
+    const bool probeOnly = p.isSet(optProbe);
 
     auto fail = [](const QString& msg) -> int {
         QTextStream(stderr) << "[calibrate] FAIL: " << msg << "\n";
@@ -390,6 +396,21 @@ int main(int argc, char* argv[])
 
         if (imgW == 0) { imgW = lastFrame.imgWidthPx; imgH = lastFrame.imgHeightPx; }
 
+        if (probeOnly) {
+            out << "  seq=" << cap.seq << "  t=" << cap.tMs
+                << "  detCount=" << lastFrame.objs.size() << "\n";
+            for (int oi = 0; oi < lastFrame.objs.size(); ++oi) {
+                const auto& d = lastFrame.objs[oi];
+                out << "    [" << oi << "] cls=" << d.classId
+                    << " conf=" << QString::number(d.confidence, 'f', 4)
+                    << " bbox=(" << d.bboxPx.x << "," << d.bboxPx.y
+                    << "," << d.bboxPx.width << "," << d.bboxPx.height << ")"
+                    << " cy_px=" << QString::number(d.centerPx.y, 'f', 1)
+                    << "\n";
+            }
+            continue;  // probe 模式下不入 points / 不拟合
+        }
+
         if (lastFrame.objs.size() > 1) {
             return fail(QString("seq=%1 检出 %2 个目标(>1)。请换一段更纯粹的窗口")
                         .arg(cap.seq).arg(lastFrame.objs.size()));
@@ -422,6 +443,11 @@ int main(int argc, char* argv[])
             << "  cy_px=" << QString::number(cp.cyPx, 'f', 1)
             << "  cy_mm=" << QString::number(cp.cyMm, 'f', 1)
             << "\n";
+    }
+
+    if (probeOnly) {
+        out << "[calibrate] probe-only 模式,共扫描 " << caps.size() << " 帧,不拟合,退出。\n";
+        return 0;
     }
 
     if (points.size() < 2) return fail("有效拟合点不足 2,无法做线性回归");
