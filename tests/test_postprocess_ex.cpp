@@ -34,6 +34,7 @@ private slots:
     void postProcess_filtersByConfThreshold();
     void postProcess_filtersByNmsThreshold();
     void postProcess_returnsEmptyForMismatchedProtoDim();
+    void postProcess_crossClassNmsKeepsHighestConf();
 };
 
 void PostprocessExTest::postProcess_filtersByConfThreshold()
@@ -112,6 +113,41 @@ void PostprocessExTest::postProcess_returnsEmptyForMismatchedProtoDim()
                         num_classes, 640, 640, 640, 640, 0, 0, 1.0f,
                         p, out);
     QVERIFY(out.empty());
+}
+
+// R4 回归:同物体被打成两个不同 class、bbox 高度重叠时,
+// class-agnostic NMS 应只保留 conf 最高的一条(类别互斥假设)。
+// 对应《测试需求.md》§7.9 实测案例:同一饮料瓶被同时识别成
+// cls=1 (beveragebottle) conf=0.77 + cls=5 (tetrapak) conf=0.67。
+void PostprocessExTest::postProcess_crossClassNmsKeepsHighestConf()
+{
+    const int num_classes = 8;
+    const int det_len     = 4 + num_classes + kMaskProtoDim;
+    const int det_count   = 2;
+    std::vector<float> det(det_count * det_len, 0.0f);
+
+    // 两条 det bbox 相同,class 不同,conf 不同。
+    // per-class NMS 不会互相抑制(分桶在不同 class),Phase 2.5 才会。
+    writeDet(&det[0 * det_len], det_len, num_classes,
+             300, 300, 80, 80, /*classId=*/1, /*score=*/0.77f);
+    writeDet(&det[1 * det_len], det_len, num_classes,
+             300, 300, 80, 80, /*classId=*/5, /*score=*/0.67f);
+
+    const int proto_h = 80, proto_w = 80;
+    std::vector<float> proto(kMaskProtoDim * proto_h * proto_w, 10.0f);
+
+    PostProcessParams p;
+    p.conf_threshold = 0.25f;
+    p.nms_threshold  = 0.45f;
+
+    std::vector<SegObject> out;
+    post_process_seg_ex(det.data(), det_count, det_len,
+                        proto.data(), kMaskProtoDim, proto_h, proto_w, true,
+                        num_classes, 640, 640, 640, 640, 0, 0, 1.0f,
+                        p, out);
+    QCOMPARE(static_cast<int>(out.size()), 1);
+    QCOMPARE(out[0].label, 1);
+    QCOMPARE(out[0].prob, 0.77f);
 }
 
 QObject* makePostprocessExTest() { return new PostprocessExTest; }
