@@ -129,6 +129,10 @@ private:
     int                       m_matchedFileCount = 0;
 
     qint64                    m_lastEmitSimMs    = -1;
+    // 保证 emit 出的 tCaptureMs 严格单调递增 —— 生产 CameraWorker 帧间隔
+    // ≥几十 ms 自然不撞 ms,但仿真模式 fastForward=0 / 高加速时多帧瞬时派
+    // 发,pipeline::nowMs() 会撞同一 ms,导致 m_pathMap 后写覆盖前写。
+    qint64                    m_lastEmittedTCapture = -1;
     int                       m_intervalMs       = 500;  // 1000/softFps
     std::atomic<int>          m_inFlight{0};
     int                       m_droppedSinceWarn = 0;

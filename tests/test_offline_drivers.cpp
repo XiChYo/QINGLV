@@ -359,7 +359,11 @@ void OfflineDriversTest::enc_useMPerMin_emitsLineSpeedDividedBy60()
 void OfflineDriversTest::enc_emitsAllVelocitiesScheduled()
 {
     // 我们 mock 里只 1 条 Velocity;再加 2 条做多样性。
+    // 注意:必须插在 SessionEnd(makeMockEvents 的最后一项) 之前,否则
+    // splitSessions 会把它们切到 session 外,scheduledCount 还是 1。
     QVector<LogEvent> v = makeMockEvents();
+    QCOMPARE(v.last().type, LogEventType::SessionEnd);
+    v.removeLast();   // 弹掉 SessionEnd
     {
         LogEvent e; e.type = LogEventType::Velocity;
         e.tMs = 1600; e.mPerMin = 12; e.rpm = 18;
@@ -368,6 +372,10 @@ void OfflineDriversTest::enc_emitsAllVelocitiesScheduled()
     {
         LogEvent e; e.type = LogEventType::Velocity;
         e.tMs = 1700; e.mPerMin = 18; e.rpm = 24;
+        v.push_back(e);
+    }
+    {
+        LogEvent e; e.type = LogEventType::SessionEnd; e.tMs = 2000;
         v.push_back(e);
     }
 

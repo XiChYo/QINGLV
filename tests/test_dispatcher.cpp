@@ -5,6 +5,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QDate>
 #include <opencv2/core.hpp>
 
 #include "pipeline/pipeline_types.h"
@@ -168,8 +169,14 @@ void DispatcherTest::armMode_writesCsvAndEmitsArmStubDispatched()
 
     // 文件必然已经创建、含表头 + 一行。
     dsp.onSessionStop();  // flush + close
-    QFile f(csv);
-    QVERIFY(f.exists());
+    // Dispatcher::openArmCsv 会按 yyyyMMdd 在配置 csv 路径所在目录下建子目录归档,
+    // 实际文件 = <dir>/<today>/arm.csv,而非配置上的扁平 <dir>/arm.csv。
+    // 这是 dispatcher.cpp 既有的设计意图(按日期滚动归档),测试只取该子目录下文件。
+    const QString today = QDate::currentDate().toString("yyyyMMdd");
+    const QString actualCsv = dir.path() + "/" + today + "/arm.csv";
+    QFile f(actualCsv);
+    QVERIFY2(f.exists(),
+             qPrintable(QStringLiteral("expected %1 to exist").arg(actualCsv)));
     QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
     const QByteArray body = f.readAll();
     QVERIFY(body.startsWith("ts_iso,trackId,classId,cx_mm,cy_mm,armA_x,armA_y,armB_x,armB_y"));

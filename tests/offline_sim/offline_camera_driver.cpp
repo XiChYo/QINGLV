@@ -63,6 +63,7 @@ bool OfflineCameraDriver::initialize(const CameraDriverOptions& opt,
     m_pathMap.clear();
     m_matchedFileCount = 0;
     m_lastEmitSimMs = -1;
+    m_lastEmittedTCapture = -1;
     m_droppedSinceWarn = 0;
     m_lastWarnMs = -1;
     m_inFlight.store(0);
@@ -244,7 +245,14 @@ void OfflineCameraDriver::onRawFrameArrived(int eventIdx)
         return;
     }
 
-    const qint64 tCapture = now;
+    // 严格递增的 tCaptureMs:即便 noThrottle=true / fastForward=0 让多帧
+    // 在同一 ms 命中,emit 出去的字段也不会撞,m_pathMap 不会自我覆盖,
+    // 下游(AnnotatedFrameSink M3)按 tCaptureMs 反查就一定能取回源图。
+    qint64 tCapture = now;
+    if (tCapture <= m_lastEmittedTCapture) {
+        tCapture = m_lastEmittedTCapture + 1;
+    }
+    m_lastEmittedTCapture = tCapture;
     {
         QMutexLocker lk(&m_pathMapMu);
         m_pathMap.insert(tCapture, f.filePath);
