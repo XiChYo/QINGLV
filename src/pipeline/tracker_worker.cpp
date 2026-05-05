@@ -10,11 +10,32 @@
 
 namespace {
 
+// 关联候选打分:
+//   score = max(iou, coverage),既兼顾"两帧大致一致 (IoU 高)",也兼顾
+//   "一帧残缺一帧完整,A 几乎是 B 的子集 (coverage 高)"。详见 §3.6 R1。
+//   贪心阶段也按 score 降序排,保证"高度相似 (高 IoU 或高 coverage) 的对"
+//   优先抢占 trackId,避免被 IoU 中等但 coverage 弱的对抢先。
 struct AssocCandidate {
-    float iou;
+    float score;     // = max(iou, coverage),用于阈值判断 + 贪心排序
+    float iou;       // 保留诊断用
+    float coverage;  // 同上
     int   detIdx;
     int   trkIdx;
 };
+
+// 取 classAreaAcc 中累计面积最大的 classId;空 / 全 0 时返回 -1。
+static int argmaxClassArea(const QHash<int, float>& acc)
+{
+    int   best     = -1;
+    float bestArea = 0.0f;
+    for (auto it = acc.constBegin(); it != acc.constEnd(); ++it) {
+        if (it.value() > bestArea) {
+            bestArea = it.value();
+            best     = it.key();
+        }
+    }
+    return best;
+}
 
 // 在同一全局栅格坐标系下合并两个二值 mask，输出 union mask + union bbox。
 static void mergeMasksUnion(const cv::Mat& maskA, const cv::Rect& bboxA,
@@ -181,6 +202,37 @@ float TrackerWorker::maskIoU(const cv::Mat& maskA, const cv::Rect& bboxA,
     return static_cast<float>(interArea) / static_cast<float>(uni);
 }
 
+float TrackerWorker::maskCoverage(const cv::Mat& maskA, const cv::Rect& bboxA,
+                                  const cv::Mat& maskB, const cv::Rect& bboxB)
+{
+    const cv::Rect inter = bboxA & bboxB;
+    if (inter.area() == 0) return 0.0f;
+
+    const cv::Rect localA(inter.x - bboxA.x, inter.y - bboxA.y,
+                          inter.width, inter.height);
+    const cv::Rect localB(inter.x - bboxB.x, inter.y - bboxB.y,
+                          inter.width, inter.height);
+    if (localA.x < 0 || localA.y < 0 ||
+        localA.x + localA.width  > maskA.cols ||
+        localA.y + localA.height > maskA.rows) return 0.0f;
+    if (localB.x < 0 || localB.y < 0 ||
+        localB.x + localB.width  > maskB.cols ||
+        localB.y + localB.height > maskB.rows) return 0.0f;
+
+    cv::Mat subA = maskA(localA);
+    cv::Mat subB = maskB(localB);
+    cv::Mat andMat;
+    cv::bitwise_and(subA, subB, andMat);
+    const int interArea = cv::countNonZero(andMat);
+    if (interArea == 0) return 0.0f;
+
+    const int areaA = cv::countNonZero(maskA);
+    const int areaB = cv::countNonZero(maskB);
+    const int smaller = std::min(areaA, areaB);
+    if (smaller <= 0) return 0.0f;
+    return static_cast<float>(interArea) / static_cast<float>(smaller);
+}
+
 cv::Rect TrackerWorker::extrapolateBbox(const cv::Rect& bbox, qint64 fromT, qint64 toT) const
 {
     const float speed = currentSpeedMmPerMs();
@@ -238,6 +290,8 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
     // 幽灵会随 extrapolate 自然推过喷阀线 + 清除距离,再由 purgeGhosts 回收。
     if (m_firstFrame) {
         m_firstFrame = false;
+        QVector<DetTrackBinding> bindings;
+        bindings.reserve(frame.objs.size());
         for (int i = 0; i < frame.objs.size(); ++i) {
             cv::Mat mask;
             cv::Rect bbox;
@@ -251,9 +305,20 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
             g.tCaptureMs       = frame.tCaptureMs;
             g.finalClassId     = frame.objs[i].classId;  // 仅为日志可读
             m_ghosts.push_back(g);
+
+            // R2:首帧 ghostify,无 trackId,bestClassId 取 det 自身
+            DetTrackBinding b;
+            b.detIndex          = i;
+            b.trackId           = -1;
+            b.bestClassId       = frame.objs[i].classId;
+            b.suppressedByGhost = false;
+            b.isNewTrack        = false;
+            b.firstFrameGhost   = true;
+            bindings.push_back(b);
         }
         LOG_INFO(QString("TrackerWorker first frame suppressed %1 objs as ghosts")
                  .arg(frame.objs.size()));
+        emit frameAnnotationReady(frame.tCaptureMs, bindings);
         return;
     }
 
@@ -277,7 +342,13 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         dets.push_back(dr);
     }
 
+    // R2:为本帧每个 det 预占一个 binding 位,detIndex 与 dets 顺序一致。
+    // 各分支(关联/ghost 抑制/新建)在自己处填字段,最后无条件 emit。
+    QVector<DetTrackBinding> bindings(dets.size());
+    for (int i = 0; i < dets.size(); ++i) bindings[i].detIndex = dets[i].srcIdx;
+
     // 2. 把每个活跃 track 的 bbox 外推到 tNow,构造候选集
+    //    打分用 max(IoU, coverage),阈值复用 cfg.iouThreshold(详见 §3.6 R1)
     QVector<AssocCandidate> candidates;
     for (int di = 0; di < dets.size(); ++di) {
         for (int ti = 0; ti < m_active.size(); ++ti) {
@@ -285,15 +356,18 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
                 m_active[ti].bboxBeltRasterPx, m_active[ti].tCaptureMs, tNow);
             const float iou = maskIoU(dets[di].mask, dets[di].bbox,
                                       m_active[ti].maskBeltRaster, trkBboxAtNow);
-            if (iou >= m_cfg.iouThreshold) {
-                candidates.push_back({iou, di, ti});
+            const float cov = maskCoverage(dets[di].mask, dets[di].bbox,
+                                           m_active[ti].maskBeltRaster, trkBboxAtNow);
+            const float score = std::max(iou, cov);
+            if (score >= m_cfg.iouThreshold) {
+                candidates.push_back({score, iou, cov, di, ti});
             }
         }
     }
 
-    // 3. 贪心关联
+    // 3. 贪心关联(按 score 降序,避免 coverage 高但 IoU 低的"残→全"对被抢)
     std::sort(candidates.begin(), candidates.end(),
-              [](const AssocCandidate& a, const AssocCandidate& b) { return a.iou > b.iou; });
+              [](const AssocCandidate& a, const AssocCandidate& b) { return a.score > b.score; });
     QVector<bool> detUsed(dets.size(), false);
     QVector<bool> trkUsed(m_active.size(), false);
     for (const auto& c : candidates) {
@@ -320,6 +394,13 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
                                       + dets[c.detIdx].areaMm2;
         detUsed[c.detIdx] = true;
         trkUsed[c.trkIdx] = true;
+
+        // R2:关联成功后,bestClassId 取本 track 当前累计面积最大的类
+        bindings[c.detIdx].trackId           = trk.trackId;
+        bindings[c.detIdx].bestClassId       = argmaxClassArea(trk.classAreaAcc);
+        bindings[c.detIdx].suppressedByGhost = false;
+        bindings[c.detIdx].isNewTrack        = false;
+        bindings[c.detIdx].firstFrameGhost   = false;
     }
 
     // 4. 未匹配 det:查已分拣池,否则新增 track
@@ -327,12 +408,18 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         if (detUsed[di]) continue;
         const auto& det = frame.objs[dets[di].srcIdx];
 
+        // ghost 抑制命中口径同步升级为 max(IoU, coverage),
+        // 与上面候选打分对称,避免"关联放过、抑制漏掉"造成的二次派发(§3.6 R1)。
         bool suppressed = false;
+        int  hitGhostFinalClass = -1;
         for (int gi = 0; gi < m_ghosts.size(); ++gi) {
             auto& g = m_ghosts[gi];
             const cv::Rect gNow = extrapolateBbox(g.bboxBeltRasterPx, g.tCaptureMs, tNow);
-            if (maskIoU(dets[di].mask, dets[di].bbox, g.maskBeltRaster, gNow)
-                >= m_cfg.iouThreshold) {
+            const float ghostIou = maskIoU(dets[di].mask, dets[di].bbox,
+                                           g.maskBeltRaster, gNow);
+            const float ghostCov = maskCoverage(dets[di].mask, dets[di].bbox,
+                                                g.maskBeltRaster, gNow);
+            if (std::max(ghostIou, ghostCov) >= m_cfg.iouThreshold) {
                 // 与 ghost 命中时也做 union 累积,让抑制池跟随观测持续更新。
                 cv::Mat mergedMask;
                 cv::Rect mergedBbox;
@@ -343,10 +430,19 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
                 g.bboxBeltRasterPx = mergedBbox;
                 g.tCaptureMs       = tNow;
                 suppressed         = true;
+                hitGhostFinalClass = g.finalClassId;
                 break;
             }
         }
-        if (suppressed) continue;
+        if (suppressed) {
+            // R2:被 ghost 抑制,无 trackId,bestClassId 取 ghost 当年的 finalClassId
+            bindings[di].trackId           = -1;
+            bindings[di].bestClassId       = hitGhostFinalClass;
+            bindings[di].suppressedByGhost = true;
+            bindings[di].isNewTrack        = false;
+            bindings[di].firstFrameGhost   = false;
+            continue;
+        }
 
         TrackedObject trk;
         trk.trackId          = m_nextTrackId++;
@@ -358,6 +454,13 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
         trk.latestAreaMm2    = dets[di].areaMm2;
         trk.classAreaAcc[det.classId] = dets[di].areaMm2;
         m_active.push_back(trk);
+
+        // R2:新建 track,首次仅一票,bestClassId = det.classId
+        bindings[di].trackId           = trk.trackId;
+        bindings[di].bestClassId       = det.classId;
+        bindings[di].suppressedByGhost = false;
+        bindings[di].isNewTrack        = true;
+        bindings[di].firstFrameGhost   = false;
     }
 
     // 5. 未匹配 track:miss++。
@@ -375,11 +478,7 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
             trk.updateCount < m_cfg.updateFramesY) continue;
 
         // 选 class:累计面积最大
-        int   bestClass = -1;
-        float bestArea  = 0.0f;
-        for (auto it = trk.classAreaAcc.constBegin(); it != trk.classAreaAcc.constEnd(); ++it) {
-            if (it.value() > bestArea) { bestArea = it.value(); bestClass = it.key(); }
-        }
+        const int bestClass = argmaxClassArea(trk.classAreaAcc);
 
         // 品类过滤
         if (bestClass < 0 ||
@@ -402,4 +501,7 @@ void TrackerWorker::onFrameInferred(const DetectedFrame& frame)
 
     // 7. 清理已分拣池
     purgeGhosts(tNow);
+
+    // R2 (§3.7):无条件 emit,即便本帧 frame.objs 为空 / 全部命中 ghost
+    emit frameAnnotationReady(tNow, bindings);
 }

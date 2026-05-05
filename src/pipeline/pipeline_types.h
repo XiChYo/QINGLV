@@ -102,6 +102,31 @@ struct ValvePulse
     quint16   channelMask   = 0;   // 每板 9 通道:bit0..bit8
 };
 
+// ----------------------------------------------------------------------------
+// Tracker -> 观测层:每一个 YOLO det 在该帧最终的归宿绑定
+// (R2,§3.7) 仅供监控/可视化使用,不参与喷阀决策路径。
+// detIndex   : 在 DetectedFrame.objs 中的下标
+// trackId    : 关联到的 trackId;新建/抑制/首帧 ghost 情况下见说明
+// bestClassId: 该帧"最终被标记成的类别",由以下规则给出
+//                 - 关联到现有 track:argmax(track.classAreaAcc) (合并后)
+//                 - 命中 ghost 抑制:ghost.finalClassId
+//                 - 新建 track:首次仅一票,bestClassId = det.classId
+//                 - 首帧 ghostify:bestClassId = det.classId
+//              恒 >= 0 (det 至少有自己的 classId)
+// suppressedByGhost: 命中已分拣池被抑制(非首帧)
+// isNewTrack       : 本帧首次进入 active(包括关联失败但通过新建产生)
+// firstFrameGhost  : 首帧被作为 ghost 直接登记
+// ----------------------------------------------------------------------------
+struct DetTrackBinding
+{
+    int  detIndex          = -1;
+    int  trackId           = -1;
+    int  bestClassId       = -1;
+    bool suppressedByGhost = false;
+    bool isNewTrack        = false;
+    bool firstFrameGhost   = false;
+};
+
 Q_DECLARE_METATYPE(DetectedObject)
 Q_DECLARE_METATYPE(DetectedFrame)
 Q_DECLARE_METATYPE(TrackedObject)
@@ -110,5 +135,7 @@ Q_DECLARE_METATYPE(SortTask)
 Q_DECLARE_METATYPE(SpeedSample)
 Q_DECLARE_METATYPE(ValvePulse)
 Q_DECLARE_METATYPE(QVector<ValvePulse>)
+Q_DECLARE_METATYPE(DetTrackBinding)
+Q_DECLARE_METATYPE(QVector<DetTrackBinding>)
 
 #endif // PIPELINE_TYPES_H

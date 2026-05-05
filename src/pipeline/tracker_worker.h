@@ -32,6 +32,12 @@ signals:
     void sortTaskReady(const SortTask& task);
     void warning(const QString& msg);
 
+    // R2 (§3.7):每一帧 onFrameInferred 处理结束后(无论是否触发分拣)无条件
+    // 发出。bindings 与 frame.objs 一一对应,顺序按 detIndex 升序。
+    // 用于离线仿真/可视化层标注"该帧每个 det 最终被合并/抑制成什么 trackId
+    // 与 bestClassId",不参与生产路径决策。
+    void frameAnnotationReady(qint64 tCaptureMs, QVector<DetTrackBinding> bindings);
+
 private:
     // 把一个 DetectedObject 栅格化到 belt 系。
     // 返回值与 TrackedObject 的 maskBeltRaster/bboxBeltRasterPx 同语义。
@@ -46,6 +52,15 @@ private:
     // 计算 mask IoU(均为 belt 栅格系,bbox 为全局栅格坐标)。
     static float maskIoU(const cv::Mat& maskA, const cv::Rect& bboxA,
                          const cv::Mat& maskB, const cv::Rect& bboxB);
+
+    // 计算 mask coverage(containment ratio):|A∩B| / min(|A|,|B|)。
+    // 物理含义:"较小那一侧 mask 有多大比例落在另一侧 mask 内"。
+    // 与 maskIoU 配合用于"残缺帧 vs 完整帧"的关联场景(参见 §3.6 R1):
+    //   - A 是 B 的子集 → coverage 接近 1,IoU 可能很低;
+    //   - 用 max(IoU, coverage) 作打分,避免漏关联导致同物体被拆 track。
+    // |A∩B|=0 时返回 0;退化输入(空 mask)返回 0。
+    static float maskCoverage(const cv::Mat& maskA, const cv::Rect& bboxA,
+                              const cv::Mat& maskB, const cv::Rect& bboxB);
 
     // 把一个 tracked / ghost 的 bbox 从其 tCaptureMs 外推到目标时间,
     // 只移动 bbox.y(belt 运动方向);mask 不动。
