@@ -508,6 +508,20 @@ int main(int argc, char* argv[])
     const qint64 tFromMs  = points.first().tMs;
     const qint64 tToMs    = points.last().tMs;
     const double rpmMean  = meanRpm(events, tFromMs, tToMs);
+    {
+        // 诊断:把 padded 窗口内的 Velocity 全部打印一遍,人工核对 rpm_mean。
+        QTextStream dbg(stdout);
+        dbg.setCodec("UTF-8");
+        dbg << "[calibrate] velocity in [" << (tFromMs - 1000) << ", "
+            << (tToMs + 1000) << "]:\n";
+        for (const auto& ev : events) {
+            if (ev.type != offline_sim::LogEventType::Velocity) continue;
+            if (ev.tMs < tFromMs - 1000 || ev.tMs > tToMs + 1000) continue;
+            dbg << "    t=" << ev.tMs
+                << "  mPerMin=" << ev.mPerMin
+                << "  rpm=" << ev.rpm << "\n";
+        }
+    }
     if (!(rpmMean > 0.0))
         return fail(QString("窗口内 Velocity 事件 rpm 平均 = %1,无法标定").arg(rpmMean));
 
