@@ -1,0 +1,5 @@
+# qmake build 产物(独立工程,与项目根 .gitignore 互补)
+test_log_parser
+sanity_check
+target_wrapper.sh
+*.app/
