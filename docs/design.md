@@ -1,6 +1,6 @@
-# 光选分拣系统技术方案 v2.0
+# 光选分拣系统技术方案 v2.1
 
-> 本文档是 `docs/requirements.md` v2.0 的实现级技术方案,描述系统的**架构设计、模块契约、跨模块数据 schema 与关键算法的设计决策**。
+> 本文档是 `docs/requirements.md` v2.1 的实现级技术方案,描述系统的**架构设计、模块契约、跨模块数据 schema 与关键算法的设计决策**。
 >
 > 范围约定:
 > - 本文档**不贴完整源码、不写函数级伪代码**;实现细节请按"附录 A 文件 ↔ 类对照"在 `src/` 中查阅。
@@ -202,7 +202,7 @@ m_droppedSinceWarn 反压窗口告警计数
 **子模块拆分**:
 
 - `yolo_session.{h,cpp}`:RKNN C API 的纯 C++ 封装(无 Qt),`init / release / infer`,便于复用与单测。
-- `postprocess_ex.{h,cpp}`:`post_process_seg_ex(...)` 接收运行时阈值参数,实现 master 口径的"按类分桶 → top-K → 矩形 IoU NMS → 仅对保留项算 mask"两阶段优化;`draw_results_ex(...)` 把 SegObject 叠成 BGR overlay。
+- `postprocess_ex.{h,cpp}`:`post_process_seg_ex(...)` 接收运行时阈值参数,实现"分桶 top-K → per-class NMS → cross-class NMS → 仅对保留项算 mask"**三阶段优化**(见 §5.6);`draw_results_ex(...)` 把 SegObject 叠成 BGR overlay。
 - `yolo_worker.{h,cpp}`:Qt Worker 壳,负责生命周期与跨线程通信。
 
 **关键 slot**:
@@ -249,6 +249,7 @@ m_droppedSinceWarn 反压窗口告警计数
 |---|---|---|
 | `sortTaskReady(SortTask)` | Dispatcher、MainWindow | 一颗物体满足触发条件,要派发 |
 | `warning(QString)` | MainWindow | 业务级告警 |
+| `frameAnnotationReady(qint64, QVector<DetTrackBinding>)` | 仅离线仿真消费(R-OBS) | 每帧无条件 emit;`bindings` 顺序与 `frame.objs` 一一对应;**不参与生产决策**,生产路径下 MainWindow 不连接此信号 |
 
 **关键内部状态**:
 
@@ -267,6 +268,7 @@ m_mmPerPx      float                    栅格化分辨率(默认 2 mm/px)
 - 第 5 步 "未匹配 trk → miss++" 的循环边界**必须用 `trkUsed.size()`** 而非 `m_active.size()`(因为第 4 步可能向 `m_active` push 了新 track)。
 - 物体一旦触发 `sortTaskReady`,该物体**不能再触发第二次**:由"trk 移出 m_active 同时入 m_ghosts"+"后续帧的同位置 det 走抑制路径"双重保证。
 - 启动首帧:见 §5.3,所有检测**入 ghost,不入 active**。
+- **关联与抑制同口径**(R-MERGE):关联候选打分与 ghost 抑制命中判定都用 `score = max(IoU, coverage)`,阈值都用 `cfg.iouThreshold`;贪心排序按 score 降序。两端口径不一致会让"残→全"在关联端被放过、在抑制端漏掉,直接导致重复分拣。
 
 ### 3.5 `Dispatcher`
 
@@ -437,6 +439,30 @@ m_encoderRawToMPerMin     float (默认 0.502)
 
 `enabledClassIds` 是唯一不来自 ini 的字段,由 `MainWindow::refreshEnabledClassIdsFromUi` 根据按钮勾选态合成。
 
+### 4.9 `DetTrackBinding`(R-OBS 帧观测,Tracker → 离线仿真层)
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `detIndex` | int | 在 `DetectedFrame.objs` 中的下标(顺序与该帧 YOLO 输出一致) |
+| `trackId` | int | 关联到的 trackId;**ghost 抑制 / 首帧 ghostify 取 -1** |
+| `bestClassId` | int | 该帧"最终被标记成的类别",**恒 ≥ 0**,可直接用于标注 |
+| `suppressedByGhost` | bool | 命中已分拣池被抑制(非首帧)|
+| `isNewTrack` | bool | 本帧首次进入 active(关联失败但通过新建产生)|
+| `firstFrameGhost` | bool | 首帧被作为 ghost 直接登记 |
+
+**`bestClassId` 取值规则**(四种状态全部覆盖、互斥):
+
+| 状态位组合 | bestClassId 来源 |
+|---|---|
+| 关联到现有 track | `argmax(track.classAreaAcc)`(合并后)|
+| `suppressedByGhost = true` | `ghost.finalClassId` |
+| `isNewTrack = true` | `det.classId`(首次仅一票) |
+| `firstFrameGhost = true` | `det.classId` |
+
+**信号语义**:`frameAnnotationReady(tCaptureMs, QVector<DetTrackBinding>)` 在 `onFrameInferred` 末尾**无条件 emit**(`frame.objs` 为空也 emit 一个空 vector,标注层据此清屏)。
+
+**与生产的关系**:生产 MainWindow 不连接此信号,Qt 信号空发开销 ≈ 一次原子操作 + 一次 `QVector` 构造,可忽略;仅离线仿真工具 `tests/offline_sim/annotated_frame_sink` 消费。
+
 ---
 
 ## 5. 关键算法设计
@@ -468,21 +494,29 @@ bbox_at(t) = rasterize(det, tCapture)  +  speed × (t − tCapture)
 
 **注**:belt 系原点定在"任务启动瞬间相机底边对应的 belt y" —— 简化口径下,`yb = 0` 对应启动瞬间相机视野最远端,`yb = realWidthMm` 对应启动瞬间相机视野最近端;喷阀线 `yb = realWidthMm + valveDistanceMm`(见 §5.4)。这个简化在本期足够用,后续接入编码器累计位移作为"启动时编码器 raw → belt 原点"时再细化。
 
-### 5.2 跨帧关联(贪心 IoU,`TrackerWorker::onFrameInferred`)
+### 5.2 跨帧关联(贪心 `max(IoU, coverage)`,`TrackerWorker::onFrameInferred`)
 
 **目标**:把每帧 YOLO 输出的 N 个检测合并到 `m_active` 的 M 个追踪上,允许多对一冲突。
+
+**关联打分(R-MERGE)**:`score = max(maskIoU, maskCoverage)`,其中 `maskCoverage(A, B) = |A∩B| / min(|A|, |B|)`。
+- **物理含义**:`IoU` 关注两 mask 的"整体重合度",分母是并集面积;`coverage` 关注"小那一侧落在另一侧上的比例",分母是较小者面积。
+- **必要性**(残→全场景):前一帧物体被画面边缘截断只露半截、后一帧整个进入视野时,两 mask 面积差异显著(典型实测残的面积 ≈ 全的 1/4~1/3),IoU = 残的面积/全的面积 ≈ 0.25~0.33,跨阈值 0.30 极其敏感;`coverage` = 残的面积/残的面积 = 1.0,稳定救回。
+- **阈值复用** `cfg.iouThreshold`(默认 0.30):语义"几何相似度"已不再是纯 IoU,但阈值含义对齐到"高度相似"——`max(IoU, coverage) ≥ 0.30` 视为高度相似。
+- **不退化**:当两 mask 面积接近(普通跨帧)时,`coverage ≈ IoU`,`max(IoU, coverage) ≈ IoU`,与原口径等价。
 
 **步骤**(与代码顺序一致,共 7 步):
 
 1. **栅格化**:对该帧所有 det 调 §5.1,得到 `dets[i] = {srcIdx, mask, bbox, areaMm2}`。
-2. **构造候选集**:对每个 `(det, trk)` 对,把 `trk.bboxBeltRasterPx` 通过 `extrapolateBbox(.., trk.tCaptureMs, tNow)` 外推到本帧 `tCapture`,计算 `maskIoU`;`iou ≥ cfg.iouThreshold` 的进 `candidates`。
-3. **贪心匹配**:`candidates` 按 IoU 降序排序;扫一遍,跳过 `det / trk` 已 used 的;命中后做 mask union 融合(把 trk 的旧 mask 与 det 的当前 mask 在 belt 全局栅格系下取并集 → 同时更新 bbox = 两 bbox 并),写回 `trk.maskBeltRaster / bboxBeltRasterPx / tCaptureMs = tNow`,`updateCount++`,`missCount = 0`,`classAreaAcc[det.classId] += det.areaMm2`,`detUsed[i] = trkUsed[j] = true`。
-4. **未匹配 det → 抑制 / 新建**:逐个未匹配 det,先扫 `m_ghosts`,任一 ghost 外推到 `tNow` 与 det 的 IoU ≥ 阈值则**与 ghost 做 union 融合并刷新 ghost 时间戳**(让抑制池跟随观测持续更新),并 `continue`;否则新建 `TrackedObject` push 到 `m_active`,`trackId = m_nextTrackId++`。
+2. **构造候选集**:对每个 `(det, trk)` 对,把 `trk.bboxBeltRasterPx` 通过 `extrapolateBbox(.., trk.tCaptureMs, tNow)` 外推到本帧 `tCapture`,计算 `iou = maskIoU` + `cov = maskCoverage`,取 `score = max(iou, cov)`;`score ≥ cfg.iouThreshold` 的进 `candidates`。
+3. **贪心匹配**:`candidates` 按 **score 降序**排序;扫一遍,跳过 `det / trk` 已 used 的;命中后做 mask union 融合(把 trk 的旧 mask 与 det 的当前 mask 在 belt 全局栅格系下取并集 → 同时更新 bbox = 两 bbox 并),写回 `trk.maskBeltRaster / bboxBeltRasterPx / tCaptureMs = tNow`,`updateCount++`,`missCount = 0`,`classAreaAcc[det.classId] += det.areaMm2`,`detUsed[i] = trkUsed[j] = true`。
+4. **未匹配 det → 抑制 / 新建**:逐个未匹配 det,先扫 `m_ghosts`,任一 ghost 外推到 `tNow` 后 `max(IoU, coverage) ≥ 阈值`(**与第 2 步同口径**)则**与 ghost 做 union 融合并刷新 ghost 时间戳**(让抑制池跟随观测持续更新),并 `continue`;否则新建 `TrackedObject` push 到 `m_active`,`trackId = m_nextTrackId++`。
 5. **未匹配 trk → miss++**:循环边界**必须用 `trkUsed.size()`** 而非 `m_active.size()`(因为第 4 步可能 push 了新 track,新 track 的 missCount 已初始化为 0)。
 6. **触发判定**:遍历 `m_active`(反向以便 `removeAt`),`miss ≥ X` 或 `update ≥ Y` 即触发;选 `classAreaAcc` 最大者为 `bestClass`;`bestClass` 不在 `cfg.enabledClassIds` 集合内 → 仅 `removeAt`,**不 emit、不入 ghost**;否则 `emit sortTaskReady(makeSortTask(trk, bestClass))` + push DispatchedGhost + `removeAt`。
 7. **purgeGhosts(tNow)**:每个 ghost 用 `extrapolateBbox` 外推到 `tNow`,若 `bbox.y * mmPerPx > dispatchLineYb + dispatchedPoolClearMm` 则丢弃。`dispatchLineYb` 按 `cfg.sorterMode` 取 `realWidthMm + valveDistanceMm`(valve)或 `realWidthMm + armDistanceMm`(arm)。
 
-**贪心 vs 匈牙利**:本期不引入匈牙利。理由:soft_fps=2 + 单帧检测数 N 通常 < 20 + 单视野 active track 数 M 通常 < 10,贪心给出的最大 IoU 优先关联在物理意义上一致(IoU 越大越像同一个物);代码实现简单且无依赖。
+**最后一步:R-OBS 帧观测信号**。每个分支(关联 / ghost 抑制 / 新建 / 首帧 ghostify)在自己处填一份 `DetTrackBinding`,主流程末尾**无条件** `emit frameAnnotationReady(tCaptureMs, bindings)`。
+
+**贪心 vs 匈牙利**:本期不引入匈牙利。理由:soft_fps=2 + 单帧检测数 N 通常 < 20 + 单视野 active track 数 M 通常 < 10,贪心给出的最大 score 优先关联在物理意义上一致(score 越大越像同一个物);代码实现简单且无依赖。
 
 ### 5.3 首帧策略(F4 / AC15)
 
@@ -543,6 +577,24 @@ bbox_at(t) = rasterize(det, tCapture)  +  speed × (t − tCapture)
 4. `emit armStubDispatched(...)` 给 MainWindow 落日志。
 
 **不下发 TCP**:`tcpforrobot` 模块不在本期分拣链路上(F14.1)。
+
+### 5.6 YOLO 后处理三阶段(`post_process_seg_ex`)
+
+**目标**:把模型一次推理的 `det_data + proto_data` 转成可供 Tracker 消费的 `SegObject` 列表(每条带 box / mask / label / prob)。
+
+**Phase 1 — 候选扫描**:逐 anchor 取出 `bbox + label + prob` + 32 维 mask coeffs;`prob > conf_threshold` 才入 `candidates`;**此阶段不算 mask**(把"系数 → proto 卷积 → sigmoid → resize → threshold"留到最后只对保留项算)。
+
+**Phase 2 — per-class NMS**:按 class 分桶,每桶按 prob 降序取 top-K(默认 K=300),桶内做矩形 IoU NMS,IoU > `nms_threshold` 的低 prob 项被抑制。这一步**仅在同 class 内做**,目的是去掉同类重叠的多检。
+
+**Phase 2.5 — class-agnostic NMS(R-NMS)**:把 Phase 2 全部保留的索引按 prob 降序统一再扫一遍,IoU > `nms_threshold` 的低 prob 项**无论 class 是否一致都抑制**。
+
+- **物理依据**:垃圾分拣业务上类别**互斥**,同一物理位置不可能同时既是 beveragebottle 又是 tetrapak;即便模型偶发同位置打出多类高 conf,业务侧只接受 conf 最高那一条进入 Tracker。
+- **必要性**:per-class NMS 不会跨桶抑制,实测出现过 `cls=1 conf=0.77` 与 `cls=5 conf=0.67` 在同一 bbox(IoU≈0.99)被双双保留 → Tracker 端立刻拆出两条 track → 重复分拣。
+- **复杂度**:Phase 2 后保留项数 N 通常 < 20,Phase 2.5 是 O(N²) 的矩形 IoU 扫描,实测 < 1ms,可忽略。
+
+**Phase 3 — 仅对保留项算 mask**:对最终 `keep_indices` 中的每条候选,做 `coeffs · proto + sigmoid + resize + threshold` 得到 `cv::Mat` mask,组装成 `SegObject` 输出。
+
+**与 master 分支的差异**:master 没有 Phase 2.5;本期在仿真核验中发现并补齐(详见 `测试需求.md §7.9`)。如未来出现"两类物体合理重叠"(比如盒子套盒子)的真实场景,可按 P3 演进为 class pair 白名单/黑名单驱动的混合 NMS。
 
 ---
 
@@ -752,6 +804,9 @@ channelMask |= (1u << bitPos)
 | `BoardWorker` 同时承担阀 + 编码器,单 mutex 保护 | RS485 物理上只有一根总线,任何并行写都会乱码;mutex 锁粒度=单帧,实测无瓶颈 | 实测瓶颈再拆队列调度 |
 | Arm CSV 仅 Arm 模式派发时懒打开并按日期滚动 | Valve 部署环境下 `arm_stub_csv` 路径常无效,频繁失败日志会污染告警总线;日期目录与图像落盘口径一致 | — |
 | `legacy/*` 模块继续存在但不接业务 | 仅保留 UI 状态显示与未来对接 stub,不影响 Running 路径 | tcpforrobot 接入后再纳入主链路 |
+| 后处理在 per-class NMS 之上再做一道 cross-class NMS(R-NMS)| 垃圾分拣类别互斥,同位置异类双检会让 Tracker 拆出两条 track 触发重复分拣;Phase 2.5 复杂度 O(N²) N<20 可忽略 | 出现"两类物体合理重叠"实例时改 class pair 白名单/黑名单 |
+| 跨帧关联与 ghost 抑制都用 `max(IoU, coverage)`(R-MERGE)| 残→全场景下 IoU 被分母拉低 ≈ 0.25-0.33 跨阈值漏关联;coverage 衡量"小那块在另一块上的覆盖率",此时接近 1 稳定救回;两端同口径杜绝"关联放过、抑制漏掉"的连锁失效 | 物体在前进方向尺寸 < 200 px 的极端小物体仍可能临界,可加入卡尔曼 / 中心距离打分 |
+| Tracker 增加 `frameAnnotationReady` 帧观测信号(R-OBS)| 离线仿真 / 可视化标注需要"该帧每个 det → 最终 trackId / bestClassId"的逐帧绑定;无条件 emit 简化消费端逻辑;生产 MainWindow 不连接,Qt 信号空发开销可忽略 | 后续如果 UI 需要在主路径上画 trackId,直接连同一信号即可 |
 
 ---
 
@@ -788,8 +843,16 @@ channelMask |= (1u << bitPos)
 
 ## 文档状态
 
-- **版本**:v2.0(对齐当前 `src/` 实现 + `requirements.md` v2.0)
-- **依赖**:`docs/requirements.md` v2.0、`docs/architecture.md` v1.0(代码-设计-需求三方对齐)、`docs/verification.md`(逐 PR 验证清单)
+- **版本**:v2.1(对齐 R-NMS / R-MERGE / R-OBS 三处主逻辑改动 + `requirements.md` v2.1)
+- **依赖**:`docs/requirements.md` v2.1、`docs/architecture.md` v1.1、`docs/verification.md`(逐 PR 验证清单)
+- **v2.0 → v2.1 变更**:
+  - §3.3 子模块拆分:`postprocess_ex` 由"两阶段优化"修订为"三阶段优化",对应代码新增 Phase 2.5 cross-class NMS。
+  - §3.4 关键 signal 表新增 `frameAnnotationReady`,关键不变量新增"关联与抑制同口径"。
+  - §4 跨模块数据契约新增 §4.9 `DetTrackBinding` schema(R-OBS),含状态位互斥规则与 `bestClassId` 取值规则表。
+  - §5.2 标题与算法描述全部从"贪心 IoU"改为"贪心 max(IoU, coverage)";新增"关联打分"节专门解释残→全场景的物理动机;步骤 2/3/4 显式带打分公式;末尾补一段 R-OBS 信号 emit 时机。
+  - §5 新增 §5.6 "YOLO 后处理三阶段",把 Phase 1/2/2.5/3 设计动机与复杂度说清。
+  - §10 设计决策与权衡新增三行:R-NMS、R-MERGE、R-OBS。
+  - **不调整**模块拆分、Session 状态机、跨模块时序、性能预算、配置 schema、附录 A 文件对照——这些都没受 R1/R2/R4 改动影响。
 - **v2.0 变更**:
   - 删除全部函数级伪代码(原 §4 跨帧关联 / §4.4 喷阀预计算)和完整源码片段;数据 schema 从代码贴片改为字段表 + 语义说明。
   - 删除"6. 串口子系统重构 / 8. 废弃代码清单 / 9. 分步落地计划"等迁移期内容(已落地)。
