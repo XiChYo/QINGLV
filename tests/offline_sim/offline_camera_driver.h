@@ -112,7 +112,12 @@ signals:
 
 private:
     void onRawFrameArrived(int eventIdx);
-    static QHash<int, QString> indexFilesBySeq(const QString& rawDir);
+    // 仅纳入文件名时间戳落在 [winStartMs, winEndMs] 内的 jpg。
+    // winStart/winEnd 任一 <= 0 时退化为不限时间。修复 F9:saveRawPic 内含两段
+    // session 时,不带时间窗会让两段同 seq jpg 互相覆盖,导致仿真选错图。
+    static QHash<int, QString> indexFilesBySeq(const QString& rawDir,
+                                               qint64 winStartMs = 0,
+                                               qint64 winEndMs   = 0);
 
     struct ScheduledFrame {
         qint64  deltaMs  = 0;   // 相对 t0_log

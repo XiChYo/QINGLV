@@ -24,12 +24,22 @@ OfflineCameraDriver::~OfflineCameraDriver() = default;
 //   img_20260430_110543_450.jpg_20.jpg
 // 末段下划线后的整数即 seq(并与 log 里 "第N次" 一致)。
 // ============================================================================
-QHash<int, QString> OfflineCameraDriver::indexFilesBySeq(const QString& rawDir)
+QHash<int, QString> OfflineCameraDriver::indexFilesBySeq(const QString& rawDir,
+                                                          qint64 winStartMs,
+                                                          qint64 winEndMs)
 {
     QHash<int, QString> out;
-    static const QRegularExpression reSeq(
+    // 形如:img_20260430_110543_450.jpg_20.jpg
+    //          ^^^^^^^^ ^^^^^^ ^^^         ^^
+    //          YYYYMMDD HHMMSS mmm         seq
+    static const QRegularExpression reFull(
+        QStringLiteral(R"(^img_(\d{8})_(\d{6})_(\d{3})\.jpg_(\d+)\.jpg$)"),
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression reSeqOnly(
         QStringLiteral(R"(_(\d+)\.jpg$)"),
         QRegularExpression::CaseInsensitiveOption);
+
+    const bool hasWin = (winStartMs > 0 && winEndMs > 0 && winEndMs >= winStartMs);
 
     QDirIterator it(rawDir,
                     QStringList() << QStringLiteral("*.jpg"),
@@ -38,12 +48,41 @@ QHash<int, QString> OfflineCameraDriver::indexFilesBySeq(const QString& rawDir)
     while (it.hasNext()) {
         const QString path = it.next();
         const QString base = QFileInfo(path).fileName();
-        auto m = reSeq.match(base);
-        if (!m.hasMatch()) continue;
-        bool ok = false;
-        const int seq = m.captured(1).toInt(&ok);
-        if (!ok) continue;
-        // 同一 seq 出现多次时(理论不该)保留先出现的,后续告警。
+
+        int seq = -1;
+        bool inWindow = !hasWin;  // 没给窗时一律放行
+        auto mFull = reFull.match(base);
+        if (mFull.hasMatch()) {
+            bool okSeq = false;
+            seq = mFull.captured(4).toInt(&okSeq);
+            if (!okSeq) continue;
+            if (hasWin) {
+                const QString d = mFull.captured(1);
+                const QString t = mFull.captured(2);
+                const int    ms = mFull.captured(3).toInt();
+                // YYYYMMDD/HHMMSS 不带分隔符,LogParser::toEpochMs 期望带分隔符,
+                // 这里手工拼一下。
+                const QString dateLocal = QStringLiteral("%1-%2-%3").arg(
+                    d.left(4), d.mid(4, 2), d.mid(6, 2));
+                const QString timeLocal = QStringLiteral("%1:%2:%3").arg(
+                    t.left(2), t.mid(2, 2), t.mid(4, 2));
+                const qint64 fileTs = LogParser::toEpochMs(dateLocal, timeLocal, ms);
+                if (fileTs <= 0) continue;
+                inWindow = (fileTs >= winStartMs && fileTs <= winEndMs);
+            }
+        } else {
+            // 文件名不符合预期格式时,退回老逻辑(只取末段 seq);此时无法做窗过滤,
+            // 让它进 hash 兜底,避免完全丢图。
+            auto mSeq = reSeqOnly.match(base);
+            if (!mSeq.hasMatch()) continue;
+            bool okSeq = false;
+            seq = mSeq.captured(1).toInt(&okSeq);
+            if (!okSeq) continue;
+        }
+
+        if (!inWindow) continue;
+        // 同一 seq 出现多次时保留先出现的,后续靠时间窗过滤已基本去重;若依然
+        // 撞 seq(同段相机重启 + 重置计数),保留先出现的并由调用方告警。
         if (!out.contains(seq)) {
             out.insert(seq, path);
         }
@@ -104,8 +143,12 @@ bool OfflineCameraDriver::initialize(const CameraDriverOptions& opt,
     }
     m_t0Log = t0;
 
-    // 3. 索引 jpg
-    const QHash<int, QString> seq2path = indexFilesBySeq(m_opt.rawDir);
+    // 3. 索引 jpg —— 限定到当前 session 时间窗(±5s 容差),修复 F9:rawDir 同时
+    //    含两段 session 的 jpg 时,不带时间窗会让两段同 seq jpg 互相覆盖,导致
+    //    仿真选错图(YOLO 拿到本段时间戳,但喂的是另一段画面)。
+    const qint64 winStart = events[sr.beginIdx].tMs - 5000;
+    const qint64 winEnd   = events[sr.endIdx].tMs   + 5000;
+    const QHash<int, QString> seq2path = indexFilesBySeq(m_opt.rawDir, winStart, winEnd);
 
     // 4. 选 Capture 事件:t_log >= t0_log + 在 [seqFrom, seqTo] 区间内
     int missingFile = 0;
