@@ -4,17 +4,21 @@
 // M0.7:角速度→线速度系数 K 标定（《测试需求.md》§3.5）
 //
 // 用法:
-//   ./calibrate_rpm_to_speed                               \
-//       --data-dir   /home/pi/offline_sim_data/saveRawPic  \
-//       --model      /opt/models/yolov8seg.rknn            \
-//       [--seq-from  20]                                   \
-//       [--seq-to    70]                                   \
-//       [--config    /home/pi/code/QINGLV/config.ini]      \
-//       [--output    offline_sim_outputs/calibration]      \
-//       [--conf      0.25]                                 \
-//       [--nms       0.45]                                 \
-//       [--real-length-mm 1520]                            \
+//   ./calibrate_rpm_to_speed                                                          \
+//       --data-dir   /home/pi/offline_sim_data/saveRawPic                              \
+//       --model      /home/pi/code/QINGLV/models/model-n-1024-robotic-final.rknn       \
+//       [--seq-from  20]                                                               \
+//       [--seq-to    70]                                                               \
+//       [--config    /home/pi/code/QINGLV/config.ini]                                  \
+//       [--output    offline_sim_outputs/calibration]                                  \
+//       [--conf      0.25]                                                             \
+//       [--nms       0.45]                                                             \
+//       [--real-length-mm 1520]                                                        \
 //       [--real-width-mm  1270]
+//
+// 模型说明(《测试需求.md》§2.3):仓库内 models/model-n-1024-robotic-final.rknn
+//   是业务方指定的离线仿真专用 YOLOv8-seg(.rknn) 模型,输入 1024,n 系列(轻量)。
+//   不要换成 model.rknn / model-n-640.rknn 等其他文件。
 //
 // 行为:
 //   1. 解析 log.txt,提取 [seq_from, seq_to] 范围内的偶数 seq Capture 事件;
